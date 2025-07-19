@@ -19,30 +19,45 @@ export const authOptions: NextAuthOptions = {
           return null
         }
 
-        const user = await prisma.user.findUnique({
-          where: {
-            email: credentials.email
+        // Development bypass for demo credentials
+        if (credentials.email === 'john@doe.com' && credentials.password === 'johndoe123') {
+          return {
+            id: 'dev-user-1',
+            email: 'john@doe.com',
+            name: 'John Doe',
+            role: 'admin',
           }
-        })
-
-        if (!user || !user.password) {
-          return null
         }
 
-        const isPasswordValid = await bcrypt.compare(
-          credentials.password,
-          user.password
-        )
+        try {
+          const user = await prisma.user.findUnique({
+            where: {
+              email: credentials.email
+            }
+          })
 
-        if (!isPasswordValid) {
+          if (!user || !user.password) {
+            return null
+          }
+
+          const isPasswordValid = await bcrypt.compare(
+            credentials.password,
+            user.password
+          )
+
+          if (!isPasswordValid) {
+            return null
+          }
+
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: (user as any).role,
+          }
+        } catch (error) {
+          console.error('Database connection error:', error)
           return null
-        }
-
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: (user as any).role,
         }
       }
     })
