@@ -122,6 +122,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const parentId = searchParams.get('parentId');
+    const action = searchParams.get('action');
 
     if (!parentId) {
       return NextResponse.json({ error: 'Parent ID is required' }, { status: 400 });
@@ -133,9 +134,7 @@ export async function GET(request: NextRequest) {
         stripeCustomer: true,
         payments: {
           where: {
-            status: {
-              in: ['pending', 'overdue']
-            }
+            status: { in: ['pending', 'overdue'] }
           },
           orderBy: {
             dueDate: 'asc'
@@ -146,6 +145,25 @@ export async function GET(request: NextRequest) {
 
     if (!parent) {
       return NextResponse.json({ error: 'Parent not found' }, { status: 404 });
+    }
+
+    // Handle portal action
+    if (action === 'portal') {
+      if (!parent.stripeCustomer?.stripeCustomerId) {
+        return NextResponse.json({ error: 'No Stripe customer found' }, { status: 404 });
+      }
+
+      const stripe = getStripe();
+      const session = await stripe.billingPortal.sessions.create({
+        customer: parent.stripeCustomer.stripeCustomerId,
+        return_url: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/payments/${parent.id}`,
+      });
+
+      return NextResponse.json({
+        success: true,
+        url: session.url,
+        message: 'Customer portal session created'
+      });
     }
 
     let stripeCustomerDetails = null;
@@ -163,19 +181,101 @@ export async function GET(request: NextRequest) {
         id: parent.id,
         name: parent.name,
         email: parent.email,
-        stripeCustomerId: parent.stripeCustomerId,
-        pendingPayments: parent.payments.length,
-        totalPendingAmount: parent.payments.reduce((sum, p) => sum + Number(p.amount), 0)
+        phone: parent.phone,
+        stripeCustomerId: parent.stripeCustomerId
       },
       stripeCustomer: parent.stripeCustomer,
       stripeCustomerDetails,
-      isLinked: !!parent.stripeCustomerId
+      pendingPayments: parent.payments
     });
 
   } catch (error) {
-    console.error('Error fetching parent Stripe info:', error);
+    console.error('Error fetching Stripe customer:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch parent Stripe information' },
+      { error: 'Failed to fetch customer details' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { parentId, action } = body;
+
+    if (!parentId) {
+      return NextResponse.json({ error: 'Parent ID is required' }, { status: 400 });
+    }
+
+    const parent = await prisma.parent.findUnique({
+      where: { id: parentId },
+      include: {
+        stripeCustomer: true
+      }
+    });
+
+    if (!parent) {
+      return NextResponse.json({ error: 'Parent not found' }, { status: 404 });
+    }
+
+    const stripe = getStripe();
+
+    if (action === 'portal') {
+      // Create Stripe Customer Portal session
+      if (!parent.stripeCustomer?.stripeCustomerId) {
+        return NextResponse.json({ error: 'No Stripe customer found' }, { status: 404 });
+      }
+
+      const session = await stripe.billingPortal.sessions.create({
+        customer: parent.stripeCustomer.stripeCustomerId,
+        return_url: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/payments/${parentId}`,
+      });
+
+      return NextResponse.json({
+        success: true,
+        portalUrl: session.url,
+        message: 'Customer portal session created'
+      });
+    }
+
+    if (action === 'sync') {
+      // Sync customer data from Stripe
+      if (!parent.stripeCustomer?.stripeCustomerId) {
+        return NextResponse.json({ error: 'No Stripe customer found' }, { status: 404 });
+      }
+
+      const stripeCustomer = await stripe.customers.retrieve(parent.stripeCustomer.stripeCustomerId);
+      
+      if ('deleted' in stripeCustomer && stripeCustomer.deleted) {
+        return NextResponse.json({ error: 'Stripe customer has been deleted' }, { status: 404 });
+      }
+
+      // Update local customer data
+      await prisma.stripeCustomer.update({
+        where: { id: parent.stripeCustomer.id },
+        data: {
+          email: stripeCustomer.email!,
+          name: stripeCustomer.name || null,
+          phone: stripeCustomer.phone || null,
+          balance: stripeCustomer.balance || 0,
+          delinquent: stripeCustomer.delinquent || false,
+          currency: stripeCustomer.currency || 'usd',
+          defaultPaymentMethod: (stripeCustomer as any).default_source as string || null,
+        }
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: 'Customer data synced successfully'
+      });
+    }
+
+    return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+
+  } catch (error) {
+    console.error('Error updating Stripe customer:', error);
+    return NextResponse.json(
+      { error: 'Failed to update Stripe customer' },
       { status: 500 }
     );
   }

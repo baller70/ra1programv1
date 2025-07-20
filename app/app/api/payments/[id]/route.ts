@@ -18,12 +18,57 @@ export async function GET(
       },
       include: {
         parent: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            phone: true,
-          },
+          include: {
+            contracts: {
+              select: {
+                id: true,
+                fileName: true,
+                originalName: true,
+                fileUrl: true,
+                status: true,
+                uploadedAt: true,
+                signedAt: true,
+                expiresAt: true,
+                templateType: true,
+              },
+              orderBy: {
+                uploadedAt: 'desc'
+              },
+              take: 1 // Get the most recent contract
+            },
+            stripeCustomer: {
+              select: {
+                id: true,
+                stripeCustomerId: true,
+                email: true,
+                name: true,
+                phone: true,
+                defaultPaymentMethod: true,
+                currency: true,
+                balance: true,
+                delinquent: true,
+                subscriptions: {
+                  select: {
+                    id: true,
+                    stripeSubscriptionId: true,
+                    status: true,
+                    currentPeriodStart: true,
+                    currentPeriodEnd: true,
+                    cancelAt: true,
+                    canceledAt: true,
+                    priceId: true,
+                    quantity: true,
+                    trialStart: true,
+                    trialEnd: true,
+                    metadata: true,
+                  },
+                  orderBy: {
+                    createdAt: 'desc'
+                  }
+                }
+              }
+            }
+          }
         },
         paymentPlan: {
           select: {

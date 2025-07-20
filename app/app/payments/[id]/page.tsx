@@ -20,8 +20,18 @@ import {
   AlertTriangle,
   Eye,
   Calendar,
-  DollarSign
+  DollarSign,
+  MessageCircle,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  Upload,
+  Settings,
+  RefreshCw,
+  Loader2,
+  Plus
 } from 'lucide-react'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../../../components/ui/collapsible'
 
 interface Payment {
   id: string
@@ -45,7 +55,24 @@ interface Payment {
       uploadedAt: string
       expiresAt: string | null
       templateType: string | null
+      fileUrl: string // Added for contract details
     }>
+    contractStatus?: 'signed' | 'pending' | 'expired'
+    contractUrl?: string
+    stripeCustomer?: {
+      stripeCustomerId: string;
+      balance: number;
+      delinquent: boolean;
+      subscriptions?: Array<{
+        id: string;
+        status: 'active' | 'trialing' | 'canceled';
+        currentPeriodStart: string;
+        currentPeriodEnd: string;
+        cancelAtPeriodEnd: boolean;
+        trialEnd: string | null;
+        stripeSubscriptionId: string; // Added for cancellation
+      }>;
+    } | null;
   } | null
   paymentPlan: {
     id: string
@@ -71,6 +98,73 @@ interface PaymentHistory {
   amount?: number
   status?: string
   metadata?: any
+}
+
+interface CommunicationRecord {
+  id: string
+  subject: string
+  body: string
+  channel: 'email' | 'sms'
+  status: 'sent' | 'delivered' | 'failed'
+  sentAt: string
+  template?: {
+    name: string
+    category: string
+  }
+}
+
+interface PaymentWithParent {
+  id: string
+  amount: number
+  dueDate: string
+  status: string
+  paidAt: string | null
+  parent: {
+    id: string
+    name: string
+    email: string
+    phone: string | null
+    contractStatus?: string
+    contractUrl?: string | null
+    contractUploadedAt?: string | null
+    contractExpiresAt?: string | null
+    contracts?: {
+      id: string
+      fileName: string
+      originalName: string
+      fileUrl: string
+      status: string
+      uploadedAt: string
+      signedAt: string | null
+      expiresAt: string | null
+      templateType: string | null
+    }[]
+    stripeCustomer?: {
+      id: string
+      stripeCustomerId: string
+      email: string
+      name: string
+      phone: string | null
+      defaultPaymentMethod: string | null
+      currency: string | null
+      balance: number | null
+      delinquent: boolean
+      subscriptions?: {
+        id: string
+        stripeSubscriptionId: string
+        status: string
+        currentPeriodStart: string
+        currentPeriodEnd: string
+        cancelAt: string | null
+        canceledAt: string | null
+        priceId: string
+        quantity: number
+        trialStart: string | null
+        trialEnd: string | null
+        metadata: any
+      }[]
+    }
+  } | null
 }
 
 function getStatusVariant(status: string) {
@@ -109,15 +203,28 @@ export default function PaymentDetailPage() {
   const { toast } = useToast()
   const [payment, setPayment] = useState<Payment | null>(null)
   const [paymentHistory, setPaymentHistory] = useState<PaymentHistory[]>([])
+  const [communicationHistory, setCommunicationHistory] = useState<CommunicationRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [commHistoryLoading, setCommHistoryLoading] = useState(false)
   const [sendingReminder, setSendingReminder] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [loadingStripe, setLoadingStripe] = useState(false);
+
+  // Collapsible state
+  const [isPaymentHistoryOpen, setIsPaymentHistoryOpen] = useState(false)
+  const [isCommunicationHistoryOpen, setIsCommunicationHistoryOpen] = useState(true)
 
   useEffect(() => {
     fetchPaymentDetails()
     fetchPaymentHistory()
   }, [params.id])
+
+  useEffect(() => {
+    if (payment?.parent?.id) {
+      fetchCommunicationHistory()
+    }
+  }, [payment?.parent?.id])
 
   const fetchPaymentDetails = async () => {
     try {
@@ -156,6 +263,24 @@ export default function PaymentDetailPage() {
       console.error('Error fetching payment history:', error)
     } finally {
       setHistoryLoading(false)
+    }
+  }
+
+  const fetchCommunicationHistory = async () => {
+    if (!payment?.parent?.id) return
+    
+    try {
+      setCommHistoryLoading(true)
+      const response = await fetch(`/api/communication/history?parentId=${payment.parent.id}&limit=10`)
+      
+      if (response.ok) {
+        const data = await response.json()
+        setCommunicationHistory(data.messages || [])
+      }
+    } catch (error) {
+      console.error('Error fetching communication history:', error)
+    } finally {
+      setCommHistoryLoading(false)
     }
   }
 
@@ -244,6 +369,213 @@ export default function PaymentDetailPage() {
     }
   }
 
+  const handleStripePortal = async () => {
+    if (!payment?.parent?.id) return;
+    setLoadingStripe(true);
+    try {
+      const response = await fetch(`/api/stripe/portal?parentId=${payment.parent.id}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.url) {
+          window.open(data.url, '_blank');
+        } else {
+          toast({
+            title: 'Error opening Stripe Portal',
+            description: data.message || 'Failed to open Stripe portal.',
+            variant: 'destructive',
+          });
+        }
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to open Stripe portal.');
+      }
+    } catch (error) {
+      console.error('Error handling Stripe portal:', error);
+      toast({
+        title: 'Failed to open Stripe Portal',
+        description: error instanceof Error ? error.message : 'There was an error opening the Stripe portal.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingStripe(false);
+    }
+  };
+
+  const handleStripeSync = async () => {
+    if (!payment?.parent?.id) return;
+    setLoadingStripe(true);
+    try {
+      const response = await fetch(`/api/stripe/sync?parentId=${payment.parent.id}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          toast({
+            title: 'Stripe Sync Successful',
+            description: 'Stripe customer data synced successfully.',
+          });
+          fetchPaymentDetails(); // Refresh payment details to update balance
+        } else {
+          toast({
+            title: 'Stripe Sync Failed',
+            description: data.message || 'Failed to sync Stripe customer data.',
+            variant: 'destructive',
+          });
+        }
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to sync Stripe customer data.');
+      }
+    } catch (error) {
+      console.error('Error handling Stripe sync:', error);
+      toast({
+        title: 'Failed to Sync Stripe',
+        description: error instanceof Error ? error.message : 'There was an error syncing the Stripe customer data.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingStripe(false);
+    }
+  };
+
+  const handleStripeSetup = async () => {
+    if (!payment?.parent?.id) return;
+    setLoadingStripe(true);
+    try {
+      const response = await fetch(`/api/stripe/setup?parentId=${payment.parent.id}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.url) {
+          window.open(data.url, '_blank');
+        } else {
+          toast({
+            title: 'Error setting up Stripe',
+            description: data.message || 'Failed to set up Stripe.',
+            variant: 'destructive',
+          });
+        }
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to set up Stripe.');
+      }
+    } catch (error) {
+      console.error('Error handling Stripe setup:', error);
+      toast({
+        title: 'Failed to Setup Stripe',
+        description: error instanceof Error ? error.message : 'There was an error setting up the Stripe integration.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingStripe(false);
+    }
+  };
+
+  const handleSubscriptionCreate = async () => {
+    if (!payment?.parent?.id) return;
+    setLoadingStripe(true);
+    try {
+      const response = await fetch(`/api/stripe/subscriptions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          parentId: payment.parent.id,
+          action: 'create'
+        })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.url) {
+          window.open(data.url, '_blank');
+        } else {
+          toast({
+            title: 'Subscription Created',
+            description: 'Subscription has been created successfully.',
+          });
+          // Refresh the page data
+          window.location.reload();
+        }
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create subscription.');
+      }
+    } catch (error) {
+      console.error('Error creating subscription:', error);
+      toast({
+        title: 'Error creating subscription',
+        description: error instanceof Error ? error.message : 'An unexpected error occurred.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingStripe(false);
+    }
+  };
+
+  const handleSubscriptionManage = async () => {
+    if (!payment?.parent?.id) return;
+    setLoadingStripe(true);
+    try {
+      const response = await fetch(`/api/stripe/portal?parentId=${payment.parent.id}&returnUrl=${encodeURIComponent(window.location.href)}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.url) {
+          window.open(data.url, '_blank');
+        } else {
+          toast({
+            title: 'Error opening Stripe Portal',
+            description: data.message || 'Failed to open Stripe portal.',
+            variant: 'destructive',
+          });
+        }
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to open Stripe portal.');
+      }
+    } catch (error) {
+      console.error('Error managing subscription:', error);
+      toast({
+        title: 'Error managing subscription',
+        description: error instanceof Error ? error.message : 'An unexpected error occurred.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingStripe(false);
+    }
+  };
+
+  const handleSubscriptionCancel = async () => {
+    if (!payment?.parent?.stripeCustomer?.subscriptions?.[0]?.stripeSubscriptionId) return;
+    setLoadingStripe(true);
+    try {
+      const response = await fetch(`/api/stripe/subscriptions`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          subscriptionId: payment.parent.stripeCustomer.subscriptions[0].stripeSubscriptionId,
+          action: 'cancel'
+        })
+      });
+      if (response.ok) {
+        toast({
+          title: 'Subscription Canceled',
+          description: 'Subscription will be canceled at the end of the current period.',
+        });
+        // Refresh the page data
+        window.location.reload();
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to cancel subscription.');
+      }
+    } catch (error) {
+      console.error('Error canceling subscription:', error);
+      toast({
+        title: 'Error canceling subscription',
+        description: error instanceof Error ? error.message : 'An unexpected error occurred.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingStripe(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="container mx-auto py-6">
@@ -310,6 +642,12 @@ export default function PaymentDetailPage() {
         
         {/* Quick Actions */}
         <div className="flex items-center space-x-2">
+          <Button asChild variant="outline">
+            <Link href="/communication">
+              <MessageCircle className="mr-2 h-4 w-4" />
+              Communication
+            </Link>
+          </Button>
           {payment.status === 'pending' && (
             <Button onClick={handleMarkAsPaid}>
               <CheckCircle className="mr-2 h-4 w-4" />
@@ -343,28 +681,47 @@ export default function PaymentDetailPage() {
                   <p className="text-3xl font-bold text-green-600">
                     ${Number(payment.amount).toLocaleString()}
                   </p>
-                  <p className="text-sm text-green-700">Payment Amount</p>
+                  <p className="text-sm text-green-600 font-medium">Amount Due</p>
                 </div>
-                
                 <div className="text-center p-4 bg-blue-50 rounded-lg border border-blue-200">
                   <Calendar className="h-8 w-8 mx-auto text-blue-600 mb-2" />
-                  <p className="text-xl font-bold text-blue-600">
+                  <p className="text-lg font-bold text-blue-600">
                     {new Date(payment.dueDate).toLocaleDateString()}
                   </p>
-                  <p className="text-sm text-blue-700">Due Date</p>
-                  {payment.status === 'overdue' && (
-                    <p className="text-xs text-red-600 font-medium mt-1">
-                      {daysOverdue} days overdue
-                    </p>
-                  )}
+                  <p className="text-sm text-blue-600 font-medium">Due Date</p>
                 </div>
-                
-                <div className="text-center p-4 bg-purple-50 rounded-lg border border-purple-200">
-                  <Bell className="h-8 w-8 mx-auto text-purple-600 mb-2" />
-                  <p className="text-xl font-bold text-purple-600">
-                    {payment.remindersSent}
+                <div className={`text-center p-4 rounded-lg border ${
+                  payment.status === 'paid' 
+                    ? 'bg-green-50 border-green-200' 
+                    : payment.status === 'overdue'
+                    ? 'bg-red-50 border-red-200'
+                    : 'bg-yellow-50 border-yellow-200'
+                }`}>
+                  {payment.status === 'paid' ? (
+                    <CheckCircle className="h-8 w-8 mx-auto text-green-600 mb-2" />
+                  ) : payment.status === 'overdue' ? (
+                    <AlertTriangle className="h-8 w-8 mx-auto text-red-600 mb-2" />
+                  ) : (
+                    <Clock className="h-8 w-8 mx-auto text-yellow-600 mb-2" />
+                  )}
+                  <p className={`text-lg font-bold capitalize ${
+                    payment.status === 'paid' 
+                      ? 'text-green-600' 
+                      : payment.status === 'overdue'
+                      ? 'text-red-600'
+                      : 'text-yellow-600'
+                  }`}>
+                    {payment.status}
                   </p>
-                  <p className="text-sm text-purple-700">Reminders Sent</p>
+                  <p className={`text-sm font-medium ${
+                    payment.status === 'paid' 
+                      ? 'text-green-600' 
+                      : payment.status === 'overdue'
+                      ? 'text-red-600'
+                      : 'text-yellow-600'
+                  }`}>
+                    Payment Status
+                  </p>
                 </div>
               </div>
               
@@ -436,17 +793,28 @@ export default function PaymentDetailPage() {
           )}
 
           {/* Payment History */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="h-5 w-5" />
-                Payment History
-              </CardTitle>
-              <CardDescription>
-                Track of all payment-related activities and status changes
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+          <Collapsible open={isPaymentHistoryOpen} onOpenChange={setIsPaymentHistoryOpen}>
+            <Card>
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                  <CardTitle className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-5 w-5" />
+                      Payment History
+                    </div>
+                    {isPaymentHistoryOpen ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )}
+                  </CardTitle>
+                  <CardDescription>
+                    Track of all payment-related activities and status changes
+                  </CardDescription>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent>
               {historyLoading ? (
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-600"></div>
@@ -501,8 +869,10 @@ export default function PaymentDetailPage() {
                   </p>
                 </div>
               )}
-            </CardContent>
-          </Card>
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
 
           {/* Reminders History */}
           {payment.reminders && payment.reminders.length > 0 && (
@@ -545,154 +915,414 @@ export default function PaymentDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* Communication History */}
+          <Collapsible open={isCommunicationHistoryOpen} onOpenChange={setIsCommunicationHistoryOpen}>
+            <Card>
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                  <CardTitle className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <MessageCircle className="h-5 w-5" />
+                      Communication History
+                    </div>
+                    {isCommunicationHistoryOpen ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )}
+                  </CardTitle>
+                  <CardDescription>
+                    Recent messages and communications with {payment.parent?.name}
+                  </CardDescription>
+                </CardHeader>
+              </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <CardContent>
+                {commHistoryLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-600"></div>
+                    <span className="ml-2 text-sm text-muted-foreground">Loading communications...</span>
+                  </div>
+                ) : communicationHistory.length > 0 ? (
+                  <div className="space-y-4">
+                    {communicationHistory.slice(0, 5).map((comm, index) => (
+                      <div key={comm.id} className="p-4 border rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            {comm.channel === 'email' ? (
+                              <Mail className="h-4 w-4 text-blue-500" />
+                            ) : (
+                              <MessageCircle className="h-4 w-4 text-green-500" />
+                            )}
+                            <Badge variant="outline" className="text-xs">
+                              {comm.channel}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge variant={comm.status === 'delivered' ? 'default' : comm.status === 'sent' ? 'secondary' : 'destructive'} className="text-xs">
+                              {comm.status}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(comm.sentAt).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </div>
+                        <h4 className="font-medium text-sm mb-2">
+                          {comm.subject || 'No Subject'}
+                        </h4>
+                        <p className="text-sm text-muted-foreground line-clamp-3">
+                          {comm.body}
+                        </p>
+                      </div>
+                    ))}
+                    
+                    {communicationHistory.length > 5 && (
+                      <div className="pt-4 border-t">
+                        <Button asChild variant="outline" className="w-full">
+                          <Link href={`/communication/history?parentId=${payment.parent?.id}`}>
+                            <MessageCircle className="mr-2 h-4 w-4" />
+                            View More ({communicationHistory.length - 5} more messages)
+                          </Link>
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <MessageCircle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                    <h4 className="text-lg font-semibold mb-2">No Communications Yet</h4>
+                    <p className="text-muted-foreground mb-4">
+                      No messages have been sent to {payment.parent?.name} yet.
+                    </p>
+                    <Button asChild>
+                      <Link href="/communication/send">
+                        <MessageCircle className="mr-2 h-4 w-4" />
+                        Send First Message
+                      </Link>
+                    </Button>
+                  </div>
+                )}
+                  </CardContent>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
         </div>
 
-        {/* Sidebar - Parent Information */}
+        {/* Sidebar - Parent Information and Quick Actions */}
         <div className="space-y-6">
-          {payment.parent && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <User className="h-5 w-5" />
-                  Parent Information
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="text-center pb-4 border-b">
-                  <div className="w-16 h-16 bg-gradient-to-br from-orange-400 to-red-500 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <span className="text-white font-bold text-xl">
-                      {payment.parent.name.charAt(0).toUpperCase()}
-                    </span>
-                  </div>
-                  <h3 className="font-semibold text-lg">{payment.parent.name}</h3>
-                </div>
-                
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <Mail className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <span className="text-sm break-all">{payment.parent.email}</span>
-                  </div>
-                  {payment.parent.phone && (
-                    <div className="flex items-center gap-3">
-                      <Phone className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                      <span className="text-sm">{payment.parent.phone}</span>
+          {/* Parent Information - ALWAYS FIRST */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <User className="h-5 w-5" />
+                Parent Information
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {payment.parent ? (
+                <>
+                  <div className="text-center pb-4 border-b">
+                    <div className="w-16 h-16 bg-gradient-to-br from-orange-400 to-red-500 rounded-full flex items-center justify-center mx-auto mb-3">
+                      <span className="text-white font-bold text-xl">
+                        {payment.parent.name.charAt(0).toUpperCase()}
+                      </span>
                     </div>
+                    <h3 className="font-semibold text-lg">{payment.parent.name}</h3>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3">
+                      <Mail className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      <span className="text-sm break-all">{payment.parent.email}</span>
+                    </div>
+                    {payment.parent.phone && (
+                      <div className="flex items-center gap-3">
+                        <Phone className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                        <span className="text-sm">{payment.parent.phone}</span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="pt-4 border-t">
+                    <Button asChild className="w-full" size="sm">
+                      <Link href={`/parents/${payment.parent.id}`}>
+                        <Eye className="mr-2 h-4 w-4" />
+                        View Parent Profile
+                      </Link>
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-8">
+                  <User className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <h4 className="text-lg font-semibold mb-2">No Parent Information</h4>
+                  <p className="text-muted-foreground">
+                    Parent information is not available for this payment.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Quick Actions Card - ALWAYS SECOND */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                Quick Actions
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+                  {/* Stripe Integration Section */}
+                  <div className="border rounded-lg p-3 bg-muted/50">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-sm font-medium flex items-center gap-2">
+                        <CreditCard className="h-4 w-4" />
+                        Stripe Integration
+                      </h4>
+                      {payment.parent?.stripeCustomer ? (
+                        <Badge variant="default">
+                          Connected
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline">Not Connected</Badge>
+                      )}
+                    </div>
+                    
+                    {payment.parent?.stripeCustomer ? (
+                      <div className="space-y-2">
+                        <div className="text-xs text-muted-foreground space-y-1">
+                          <p>Customer ID: {payment.parent.stripeCustomer.stripeCustomerId}</p>
+                          <p>Balance: ${(payment.parent.stripeCustomer.balance / 100).toFixed(2)}</p>
+                          {payment.parent.stripeCustomer.delinquent && (
+                            <p className="text-red-600">⚠ Account Delinquent</p>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="flex-1"
+                            onClick={handleStripePortal}
+                            disabled={loadingStripe}
+                          >
+                            <Settings className="mr-2 h-3 w-3" />
+                            {loadingStripe ? 'Loading...' : 'Manage'}
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="flex-1"
+                            onClick={handleStripeSync}
+                            disabled={loadingStripe}
+                          >
+                            <RefreshCw className="mr-2 h-3 w-3" />
+                            Sync
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <p className="text-xs text-muted-foreground">
+                          Connect to Stripe for payment processing
+                        </p>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="w-full"
+                          onClick={handleStripeSetup}
+                          disabled={loadingStripe}
+                        >
+                          <CreditCard className="mr-2 h-3 w-3" />
+                          {loadingStripe ? 'Setting up...' : 'Setup Stripe'}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Contract Section */}
+              <div className="border rounded-lg p-3 bg-muted/50">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-medium flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Contract
+                  </h4>
+                  {payment.parent?.contracts && payment.parent.contracts.length > 0 ? (
+                    <Badge variant={
+                      payment.parent.contracts[0].status === 'signed' ? 'default' :
+                      payment.parent.contracts[0].status === 'pending' ? 'secondary' :
+                      payment.parent.contracts[0].status === 'expired' ? 'destructive' :
+                      'outline'
+                    }>
+                      {payment.parent.contracts[0].status}
+                    </Badge>
+                  ) : payment.parent?.contractStatus ? (
+                    <Badge variant={
+                      payment.parent.contractStatus === 'signed' ? 'default' :
+                      payment.parent.contractStatus === 'pending' ? 'secondary' :
+                      payment.parent.contractStatus === 'expired' ? 'destructive' :
+                      'outline'
+                    }>
+                      {payment.parent.contractStatus}
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline">Not Uploaded</Badge>
                   )}
                 </div>
                 
-                <div className="pt-4 border-t">
-                  <Button asChild className="w-full">
-                    <Link href={`/parents/${payment.parent.id}`}>
-                      <Eye className="mr-2 h-4 w-4" />
-                      View Parent Profile
-                    </Link>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Quick Actions Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Quick Actions</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {payment.status === 'pending' && (
-                <Button onClick={handleMarkAsPaid} className="w-full">
-                  <CheckCircle className="mr-2 h-4 w-4" />
-                  Mark as Paid
-                </Button>
-              )}
-              {payment.status !== 'paid' && (
-                <Button variant="outline" onClick={handleSendReminder} className="w-full" disabled={sendingReminder}>
-                  <Bell className="mr-2 h-4 w-4" />
-                  {sendingReminder ? 'Sending...' : 'Send Payment Reminder'}
-                </Button>
-              )}
-              <Button asChild variant="outline" className="w-full">
-                <Link href={`/communication/send?parentId=${payment.parent?.id}&parentName=${encodeURIComponent(payment.parent?.name || '')}&parentEmail=${encodeURIComponent(payment.parent?.email || '')}&context=payment&paymentId=${payment.id}`}>
-                  <Mail className="mr-2 h-4 w-4" />
-                  Contact Parent
-                </Link>
-              </Button>
-              
-              {/* Parent Contracts Section */}
-              {payment.parent?.contracts && payment.parent.contracts.length > 0 && (
-                <div className="pt-3 border-t">
-                  <h4 className="text-sm font-medium text-muted-foreground mb-2">Parent Contracts</h4>
+                {payment.parent?.contracts && payment.parent.contracts.length > 0 ? (
                   <div className="space-y-2">
-                    {payment.parent.contracts.slice(0, 3).map((contract) => (
-                      <Button asChild key={contract.id} variant="ghost" size="sm" className="w-full justify-start h-auto p-2">
-                        <Link href={`/contracts/${contract.id}`}>
-                          <div className="flex items-center justify-between w-full">
-                            <div className="flex items-center gap-2">
-                              <FileText className="h-4 w-4" />
-                              <div className="text-left">
-                                <p className="text-sm font-medium truncate max-w-[140px]">
-                                  {contract.originalName || contract.fileName}
-                                </p>
-                                <div className="flex items-center gap-2">
-                                  <Badge 
-                                    variant={
-                                      contract.status === 'signed' ? 'default' :
-                                      contract.status === 'pending' ? 'secondary' :
-                                      contract.status === 'expired' ? 'destructive' :
-                                      'outline'
-                                    } 
-                                    className="text-xs"
-                                  >
-                                    {contract.status}
-                                  </Badge>
-                                  {contract.templateType && (
-                                    <Badge variant="outline" className="text-xs capitalize">
-                                      {contract.templateType}
-                                    </Badge>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-xs text-muted-foreground">
-                                {contract.signedAt ? 
-                                  `Signed ${new Date(contract.signedAt).toLocaleDateString()}` :
-                                  `Uploaded ${new Date(contract.uploadedAt).toLocaleDateString()}`
-                                }
-                              </p>
-                              {contract.expiresAt && (
-                                <p className="text-xs text-muted-foreground">
-                                  Expires {new Date(contract.expiresAt).toLocaleDateString()}
-                                </p>
-                              )}
-                            </div>
-                          </div>
+                    <p className="text-xs text-muted-foreground">
+                      {payment.parent.contracts[0].originalName}
+                    </p>
+                    <div className="flex gap-2">
+                      <Button asChild variant="outline" size="sm" className="flex-1">
+                        <Link href={`/contracts/${payment.parent.contracts[0].id}`}>
+                          <Eye className="mr-2 h-3 w-3" />
+                          View
                         </Link>
                       </Button>
-                    ))}
-                    {payment.parent.contracts.length > 3 && (
-                      <Button asChild variant="outline" size="sm" className="w-full">
-                        <Link href={`/parents/${payment.parent.id}#contracts`}>
-                          View All {payment.parent.contracts.length} Contracts
-                        </Link>
+                      <Button asChild variant="outline" size="sm" className="flex-1">
+                        <a href={payment.parent.contracts[0].fileUrl} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="mr-2 h-3 w-3" />
+                          Open
+                        </a>
                       </Button>
-                    )}
+                    </div>
                   </div>
-                </div>
-              )}
-              
-              {/* No Contracts Message */}
-              {payment.parent?.contracts && payment.parent.contracts.length === 0 && (
-                <div className="pt-3 border-t">
-                  <div className="text-center py-3">
-                    <FileText className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-                    <p className="text-sm text-muted-foreground">No contracts found</p>
-                    <Button asChild variant="outline" size="sm" className="mt-2">
-                      <Link href={`/contracts/upload?parentId=${payment.parent.id}`}>
+                ) : payment.parent?.contractStatus && payment.parent?.contractUrl ? (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      Legacy Contract ({payment.parent.contractStatus})
+                    </p>
+                    <div className="flex gap-2">
+                      <Button asChild variant="outline" size="sm" className="flex-1">
+                        <Link href="/contracts">
+                          <Eye className="mr-2 h-3 w-3" />
+                          View All
+                        </Link>
+                      </Button>
+                      {payment.parent.contractUrl && (
+                        <Button asChild variant="outline" size="sm" className="flex-1">
+                          <a href={payment.parent.contractUrl} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="mr-2 h-3 w-3" />
+                            Open
+                          </a>
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      No contract uploaded yet
+                    </p>
+                    <Button asChild variant="outline" size="sm" className="w-full">
+                      <Link href={`/contracts/upload?parentId=${payment.parent?.id}`}>
+                        <Upload className="mr-2 h-3 w-3" />
                         Upload Contract
                       </Link>
                     </Button>
                   </div>
-                </div>
+                )}
+              </div>
+
+              {/* Subscription Section */}
+                  <div className="border rounded-lg p-3 bg-muted/50">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-sm font-medium flex items-center gap-2">
+                        <Calendar className="h-4 w-4" />
+                        Subscription
+                      </h4>
+                      {payment.parent?.stripeCustomer?.subscriptions && payment.parent.stripeCustomer.subscriptions.length > 0 ? (
+                        <Badge variant={
+                          payment.parent.stripeCustomer.subscriptions[0].status === 'active' ? 'default' :
+                          payment.parent.stripeCustomer.subscriptions[0].status === 'trialing' ? 'secondary' :
+                          payment.parent.stripeCustomer.subscriptions[0].status === 'canceled' ? 'destructive' :
+                          'outline'
+                        }>
+                          {payment.parent.stripeCustomer.subscriptions[0].status}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline">No Subscription</Badge>
+                      )}
+                    </div>
+                    
+                    {payment.parent?.stripeCustomer?.subscriptions && payment.parent.stripeCustomer.subscriptions.length > 0 ? (
+                      <div className="space-y-2">
+                        <div className="text-xs text-muted-foreground">
+                          <div>Current Period: {new Date(payment.parent.stripeCustomer.subscriptions[0].currentPeriodStart).toLocaleDateString()} - {new Date(payment.parent.stripeCustomer.subscriptions[0].currentPeriodEnd).toLocaleDateString()}</div>
+                          {payment.parent.stripeCustomer.subscriptions[0].cancelAt && new Date(payment.parent.stripeCustomer.subscriptions[0].cancelAt) < new Date() && (
+                            <div className="text-orange-600 font-medium">Cancels at: {new Date(payment.parent.stripeCustomer.subscriptions[0].cancelAt).toLocaleDateString()}</div>
+                          )}
+                          {payment.parent.stripeCustomer.subscriptions[0].trialEnd && new Date(payment.parent.stripeCustomer.subscriptions[0].trialEnd) > new Date() && (
+                            <div className="text-blue-600 font-medium">Trial ends: {new Date(payment.parent.stripeCustomer.subscriptions[0].trialEnd).toLocaleDateString()}</div>
+                          )}
+                        </div>
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs"
+                            onClick={handleSubscriptionManage}
+                            disabled={loadingStripe}
+                          >
+                            {loadingStripe ? <Loader2 className="h-3 w-3 animate-spin" /> : <Settings className="h-3 w-3" />}
+                            Manage
+                          </Button>
+                          {payment.parent.stripeCustomer.subscriptions[0].status === 'active' && payment.parent.stripeCustomer.subscriptions[0].cancelAt && new Date(payment.parent.stripeCustomer.subscriptions[0].cancelAt) > new Date() && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-xs text-orange-600"
+                              onClick={handleSubscriptionCancel}
+                              disabled={loadingStripe}
+                            >
+                              Cancel
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <p className="text-xs text-muted-foreground">No active subscription</p>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-xs"
+                          onClick={handleSubscriptionCreate}
+                          disabled={loadingStripe}
+                        >
+                          {loadingStripe ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                          Create Subscription
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
+              <Button asChild variant="outline" size="sm" className="w-full">
+                <Link href="/communication">
+                  <MessageCircle className="mr-2 h-4 w-4" />
+                  Communication
+                </Link>
+              </Button>
+              
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="w-full" 
+                onClick={handleSendReminder} 
+                disabled={sendingReminder || payment.status === 'paid'}
+              >
+                <Bell className="mr-2 h-4 w-4" />
+                {sendingReminder ? 'Sending...' : 'Send Reminder'}
+              </Button>
+
+              {payment.status === 'pending' && (
+                <Button onClick={handleMarkAsPaid} size="sm" className="w-full">
+                  <CheckCircle className="mr-2 h-4 w-4" />
+                  Mark as Paid
+                </Button>
               )}
             </CardContent>
           </Card>

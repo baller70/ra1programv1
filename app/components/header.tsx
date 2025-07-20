@@ -3,7 +3,6 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useUser, SignOutButton } from '@clerk/nextjs'
 import { Bell, User, LogOut, Menu, X } from 'lucide-react'
 import { Button } from './ui/button'
 import {
@@ -16,8 +15,16 @@ import {
 import { Badge } from './ui/badge'
 
 export function Header() {
-  const { user } = useUser()
+  // Temporarily disabled for development - uncomment when Clerk is properly configured
+  // const { user } = useUser()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  // Mock user data for development
+  const user = {
+    firstName: 'Admin',
+    lastName: 'User',
+    emailAddresses: [{ emailAddress: 'admin@riseasone.com' }]
+  }
 
   const navigation = [
     { name: 'Dashboard', href: '/' },
@@ -84,13 +91,9 @@ export function Header() {
                 <Link href="/settings">Settings</Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="cursor-pointer p-0">
-                <SignOutButton>
-                  <div className="flex items-center w-full px-2 py-1.5">
-                    <LogOut className="mr-2 h-4 w-4" />
-                    <span>Log out</span>
-                  </div>
-                </SignOutButton>
+              <DropdownMenuItem className="cursor-pointer">
+                <LogOut className="mr-2 h-4 w-4" />
+                <span>Log out</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

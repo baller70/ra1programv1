@@ -66,6 +66,47 @@ export async function POST(request: Request) {
   }
 }
 
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const parentId = searchParams.get('parentId');
+
+    if (!parentId) {
+      return NextResponse.json({ error: 'Parent ID is required' }, { status: 400 });
+    }
+
+    const results = {
+      customers: 0,
+      subscriptions: 0,
+      invoices: 0,
+      paymentMethods: 0,
+      errors: [] as string[]
+    }
+
+    try {
+      results.customers = await syncCustomers(parentId);
+      results.subscriptions = await syncSubscriptions(parentId);
+      results.invoices = await syncInvoices(parentId);
+      results.paymentMethods = await syncPaymentMethods(parentId);
+    } catch (error) {
+      results.errors.push(error instanceof Error ? error.message : 'Unknown error');
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Stripe sync completed',
+      results
+    });
+
+  } catch (error) {
+    console.error('Stripe sync error:', error);
+    return NextResponse.json(
+      { error: 'Failed to sync with Stripe' },
+      { status: 500 }
+    );
+  }
+}
+
 async function syncCustomers(parentId?: string) {
   let synced = 0
 

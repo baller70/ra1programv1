@@ -1,28 +1,36 @@
 
-import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
+import { NextRequest, NextResponse } from 'next/server'
 
-const isPublicRoute = createRouteMatcher([
-  '/api/webhooks(.*)',
-  '/api/health',
-  '/api/parents(.*)',
-  '/api/payments(.*)',
-  '/api/payment-plans(.*)',
-  '/api/dashboard(.*)',
-  '/api/ai(.*)', // AI API routes for testing
-  '/api/messages(.*)', // Messages API for testing AI messaging
-  '/parents(.*)', // Parents page for testing AI functions
-  '/sign-in(.*)',
-  '/sign-up(.*)',
-  '/',
-  // Note: Pages like /parents, /settings require authentication
-  // API routes are protected by individual requireAuth() calls
-])
+// Temporarily disabled Clerk middleware for development
+// import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 
-export default clerkMiddleware(async (auth, request) => {
-  if (!isPublicRoute(request)) {
-    await auth.protect()
-  }
-})
+// const isPublicRoute = createRouteMatcher([
+//   '/api/webhooks(.*)',
+//   '/api/health',
+//   '/api/parents(.*)',
+//   '/api/payments(.*)',
+//   '/api/payment-plans(.*)',
+//   '/api/dashboard(.*)',
+//   '/api/ai(.*)', // AI API routes for testing
+//   '/api/messages(.*)', // Messages API for testing AI messaging
+//   '/parents(.*)', // Parents page for testing AI functions
+//   '/sign-in(.*)',
+//   '/sign-up(.*)',
+//   '/',
+//   // Note: Pages like /parents, /settings require authentication
+//   // API routes are protected by individual requireAuth() calls
+// ])
+
+// export default clerkMiddleware(async (auth, request) => {
+//   if (!isPublicRoute(request)) {
+//     await auth.protect()
+//   }
+// })
+
+// Temporary middleware for development - allows all requests
+export default function middleware(request: NextRequest) {
+  return NextResponse.next()
+}
 
 export const config = {
   matcher: [

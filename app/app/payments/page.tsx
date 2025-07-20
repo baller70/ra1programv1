@@ -11,6 +11,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/ca
 import { Badge } from '../../components/ui/badge'
 import { Checkbox } from '../../components/ui/checkbox'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../../components/ui/dialog'
+import { Label } from '../../components/ui/label'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../../components/ui/collapsible'
 import { 
   Plus, 
   Search, 
@@ -45,12 +49,12 @@ import {
   Settings,
   Edit,
   Trash2,
-  UserPlus
+  UserPlus,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react'
 import Link from 'next/link'
 import { PaymentWithRelations, PaymentStats, PaymentAnalytics } from '../../lib/types'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../../components/ui/dialog'
-import { Label } from '../../components/ui/label'
 import { toast } from '../../components/ui/use-toast'
 
 // Program configuration
@@ -89,6 +93,11 @@ export default function PaymentsPage() {
   const [showTeamDialog, setShowTeamDialog] = useState(false)
   const [editingTeam, setEditingTeam] = useState<any>(null)
   const [teamForm, setTeamForm] = useState({ name: '', description: '', color: '#f97316' })
+  const [showParentAssignDialog, setShowParentAssignDialog] = useState(false)
+  const [allParents, setAllParents] = useState<any[]>([])
+  const [selectedParents, setSelectedParents] = useState<string[]>([])
+  const [assignToTeamId, setAssignToTeamId] = useState<string>('')
+  const [collapsedTeams, setCollapsedTeams] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     fetchData()
@@ -105,6 +114,73 @@ export default function PaymentsPage() {
     } catch (error) {
       console.error('Error fetching teams:', error)
     }
+  }
+
+  const fetchAllParents = async () => {
+    try {
+      const response = await fetch('/api/parents')
+      if (response.ok) {
+        const data = await response.json()
+        // API returns { parents: [...], pagination: {...} }
+        const parents = data.parents || []
+        setAllParents(Array.isArray(parents) ? parents : [])
+      } else {
+        console.error('Failed to fetch parents:', response.status)
+        setAllParents([])
+      }
+    } catch (error) {
+      console.error('Error fetching parents:', error)
+      setAllParents([])
+    }
+  }
+
+  const handleAssignParents = async () => {
+    if (!assignToTeamId || selectedParents.length === 0) {
+      alert('Please select a team and at least one parent')
+      return
+    }
+
+    try {
+      const response = await fetch('/api/teams/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          teamId: assignToTeamId,
+          parentIds: selectedParents
+        })
+      })
+
+      if (response.ok) {
+        await fetchTeams()
+        await fetchData()
+        setShowParentAssignDialog(false)
+        setSelectedParents([])
+        setAssignToTeamId('')
+        alert(`Successfully assigned ${selectedParents.length} parent(s) to team`)
+      } else {
+        alert('Failed to assign parents to team')
+      }
+    } catch (error) {
+      console.error('Error assigning parents:', error)
+      alert('Error assigning parents to team')
+    }
+  }
+
+  const openParentAssignDialog = () => {
+    fetchAllParents()
+    setShowParentAssignDialog(true)
+  }
+
+  const toggleTeamCollapse = (teamName: string) => {
+    setCollapsedTeams(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(teamName)) {
+        newSet.delete(teamName)
+      } else {
+        newSet.add(teamName)
+      }
+      return newSet
+    })
   }
 
   const handleCreateTeam = async () => {
@@ -226,6 +302,7 @@ export default function PaymentsPage() {
       if (statusFilter !== 'all') params.append('status', statusFilter)
       if (selectedTeam !== 'all') params.append('teamId', selectedTeam)
       params.append('program', activeProgram)
+      params.append('latestOnly', 'true') // Only get latest payment per parent
 
       const [paymentsRes, analyticsRes] = await Promise.all([
         fetch(`/api/payments?${params}`),
@@ -845,6 +922,10 @@ export default function PaymentsPage() {
                 }
               </div>
               <div className="ml-auto flex items-center space-x-2">
+                <Button variant="outline" size="sm" onClick={openParentAssignDialog}>
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Assign Parents
+                </Button>
                 <Dialog open={showTeamDialog} onOpenChange={setShowTeamDialog}>
                   <DialogTrigger asChild>
                     <Button variant="outline" size="sm" onClick={() => {
@@ -943,54 +1024,67 @@ export default function PaymentsPage() {
         {/* Payments Table */}
         <Card>
           <CardHeader>
-            <CardTitle>Payment Records</CardTitle>
+            <CardTitle>Latest Payments by Parent</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Showing the most recent payment for each parent. Click "View Details & History" to see all payments for a parent.
+            </p>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               {Object.entries(groupedPayments).map(([groupName, groupPayments]) => {
                 const team = teams.find(t => t.name === groupName)
                 const isUnassigned = groupName === 'Unassigned'
+                const isCollapsed = collapsedTeams.has(groupName)
                 
                 return (
-                  <div key={groupName} className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div
-                          className="w-4 h-4 rounded-full"
-                          style={{ 
-                            backgroundColor: isUnassigned ? '#6b7280' : (team?.color || '#f97316')
-                          }}
-                        />
-                        <h3 className="text-lg font-semibold text-orange-600">
-                          {groupName} ({groupPayments.length} {groupPayments.length === 1 ? 'payment' : 'payments'})
-                        </h3>
-                      </div>
-                      {team && (
-                        <div className="flex items-center space-x-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleEditTeam(team)}
-                          >
-                            <Settings className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDeleteTeam(team.id)}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                  <Collapsible key={groupName} open={!isCollapsed} onOpenChange={() => toggleTeamCollapse(groupName)}>
+                    <div className="space-y-4">
+                      <CollapsibleTrigger asChild>
+                        <div className="flex items-center justify-between cursor-pointer hover:bg-muted/50 p-2 rounded-md transition-colors">
+                          <div className="flex items-center space-x-3">
+                            <div
+                              className="w-4 h-4 rounded-full"
+                              style={{ 
+                                backgroundColor: isUnassigned ? '#6b7280' : (team?.color || '#f97316')
+                              }}
+                            />
+                            <h3 className="text-lg font-semibold text-orange-600">
+                              {groupName} ({groupPayments.length} {groupPayments.length === 1 ? 'parent' : 'parents'})
+                            </h3>
+                            {isCollapsed ? (
+                              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                            ) : (
+                              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                            )}
+                          </div>
+                          {team && (
+                            <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleEditTeam(team)}
+                              >
+                                <Settings className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDeleteTeam(team.id)}
+                                className="text-red-600 hover:text-red-700"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                    
-                    {groupPayments.length > 0 ? (
-                      <div className="space-y-3 border-l-4 pl-4" style={{ 
-                        borderColor: isUnassigned ? '#6b7280' : (team?.color || '#f97316')
-                      }}>
-                        {groupPayments.map((payment) => (
+                      </CollapsibleTrigger>
+                      
+                      <CollapsibleContent className="space-y-3">
+                        {groupPayments.length > 0 ? (
+                          <div className="space-y-3 border-l-4 pl-4 ml-2" style={{ 
+                            borderColor: isUnassigned ? '#6b7280' : (team?.color || '#f97316')
+                          }}>
+                            {groupPayments.map((payment) => (
                           <div key={payment.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
                             <div className="flex items-center space-x-4">
                               <Checkbox
@@ -1011,11 +1105,16 @@ export default function PaymentsPage() {
                               <div>
                                 <p className="font-medium">{payment.parent?.name}</p>
                                 <p className="text-sm text-muted-foreground">{payment.parent?.email}</p>
-                                {payment.remindersSent > 0 && (
-                                  <p className="text-xs text-orange-600">
-                                    {payment.remindersSent} reminder{payment.remindersSent !== 1 ? 's' : ''} sent
-                                  </p>
-                                )}
+                                <div className="flex items-center space-x-2 mt-1">
+                                  <Badge variant="secondary" className="text-xs">
+                                    Latest Payment
+                                  </Badge>
+                                  {payment.remindersSent > 0 && (
+                                    <p className="text-xs text-orange-600">
+                                      {payment.remindersSent} reminder{payment.remindersSent !== 1 ? 's' : ''} sent
+                                    </p>
+                                  )}
+                                </div>
                               </div>
                             </div>
                             
@@ -1040,7 +1139,7 @@ export default function PaymentsPage() {
                               <Button asChild variant="outline" size="sm">
                                 <Link href={`/payments/${payment.id}`}>
                                   <Eye className="mr-2 h-4 w-4" />
-                                  View
+                                  View Details & History
                                 </Link>
                               </Button>
                               {payment.status === 'pending' && (
@@ -1068,9 +1167,11 @@ export default function PaymentsPage() {
                         </Button>
                       </div>
                     )}
-                  </div>
-                )
-              })}
+                  </CollapsibleContent>
+                </div>
+              </Collapsible>
+            )
+          })}
             </div>
           </CardContent>
         </Card>
@@ -1078,7 +1179,95 @@ export default function PaymentsPage() {
             </TabsContent>
           ))}
         </Tabs>
-      </div>
-    </AppLayout>
+      
+      {/* Parent Assignment Dialog */}
+      <Dialog open={showParentAssignDialog} onOpenChange={setShowParentAssignDialog}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Assign Parents to Team</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="assignTeam">Select Team</Label>
+              <Select value={assignToTeamId} onValueChange={setAssignToTeamId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a team..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {teams.map((team) => (
+                    <SelectItem key={team.id} value={team.id}>
+                      <div className="flex items-center space-x-2">
+                        <div
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: team.color || '#f97316' }}
+                        />
+                        <span>{team.name}</span>
+                        <span className="text-muted-foreground">({team._count.parents} parents)</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div>
+              <Label>Select Parents to Assign</Label>
+              <div className="border rounded-md p-4 max-h-96 overflow-y-auto">
+                <div className="space-y-2">
+                  {Array.isArray(allParents) && allParents.length > 0 ? (
+                    allParents.map((parent) => (
+                      <div key={parent.id} className="flex items-center space-x-3 p-2 hover:bg-muted rounded">
+                        <Checkbox
+                          checked={selectedParents.includes(parent.id)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedParents([...selectedParents, parent.id])
+                            } else {
+                              setSelectedParents(selectedParents.filter(id => id !== parent.id))
+                            }
+                          }}
+                        />
+                        <div className="flex-1">
+                          <div className="font-medium">{parent.name}</div>
+                          <div className="text-sm text-muted-foreground">{parent.email}</div>
+                          {parent.team && (
+                            <div className="text-xs text-muted-foreground">
+                              Currently in: {parent.team.name}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      {allParents === null ? (
+                        <div>Loading parents...</div>
+                      ) : (
+                        <div>No parents found</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex justify-between items-center">
+              <div className="text-sm text-muted-foreground">
+                {selectedParents.length} parent(s) selected
+              </div>
+              <div className="flex space-x-2">
+                <Button variant="outline" onClick={() => setShowParentAssignDialog(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleAssignParents} disabled={!assignToTeamId || selectedParents.length === 0}>
+                  Assign to Team
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  </AppLayout>
   )
 }

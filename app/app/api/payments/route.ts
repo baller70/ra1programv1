@@ -49,6 +49,7 @@ export async function GET(request: NextRequest) {
     const parentId = searchParams.get('parentId')
     const teamId = searchParams.get('teamId') // New team filter
     const search = searchParams.get('search')
+    const latestOnly = searchParams.get('latestOnly') === 'true' // New parameter
     
     const offset = (page - 1) * limit
 
@@ -79,37 +80,83 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const payments = await prisma.payment.findMany({
-      where,
-      include: {
-        parent: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            phone: true,
-            team: {
-              select: {
-                id: true,
-                name: true,
-                color: true
+    let payments;
+    
+    if (latestOnly) {
+      // Get all payments first, then filter to latest per parent in JavaScript
+      const allPayments = await prisma.payment.findMany({
+        where,
+        include: {
+          parent: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              team: {
+                select: {
+                  id: true,
+                  name: true,
+                  color: true
+                }
               }
+            }
+          },
+          paymentPlan: {
+            select: {
+              id: true,
+              type: true,
+              totalAmount: true,
+              installmentAmount: true
             }
           }
         },
-        paymentPlan: {
-          select: {
-            id: true,
-            type: true,
-            totalAmount: true,
-            installmentAmount: true
-          }
+        orderBy: { dueDate: 'desc' }
+      })
+
+      // Group by parent and get the latest payment for each
+      const latestPaymentsMap = new Map()
+      allPayments.forEach(payment => {
+        const parentId = payment.parentId
+        if (!latestPaymentsMap.has(parentId)) {
+          latestPaymentsMap.set(parentId, payment)
         }
-      },
-      orderBy: { dueDate: 'asc' },
-      take: limit,
-      skip: offset
-    })
+      })
+      
+      payments = Array.from(latestPaymentsMap.values())
+    } else {
+      payments = await prisma.payment.findMany({
+        where,
+        include: {
+          parent: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              team: {
+                select: {
+                  id: true,
+                  name: true,
+                  color: true
+                }
+              }
+            }
+          },
+          paymentPlan: {
+            select: {
+              id: true,
+              type: true,
+              totalAmount: true,
+              installmentAmount: true
+            }
+          }
+        },
+        orderBy: { dueDate: 'asc' },
+        take: limit,
+        skip: offset
+      })
+    }
 
     const total = await prisma.payment.count({ where })
 
