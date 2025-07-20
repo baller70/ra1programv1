@@ -7,6 +7,10 @@ import { AppLayout } from '../../../components/app-layout'
 import { Button } from '../../../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card'
 import { Badge } from '../../../components/ui/badge'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../../components/ui/dialog'
+import { Textarea } from '../../../components/ui/textarea'
+import { Label } from '../../../components/ui/label'
+import { useToast } from '../../../hooks/use-toast'
 import { 
   ArrowLeft, 
   Edit, 
@@ -24,7 +28,8 @@ import {
   Target,
   RefreshCw,
   Shield,
-  Lightbulb
+  Lightbulb,
+  Send
 } from 'lucide-react'
 import Link from 'next/link'
 import { ParentWithRelations } from '../../../lib/types'
@@ -36,6 +41,11 @@ export default function ParentProfilePage() {
   const [loading, setLoading] = useState(true)
   const [aiAnalysis, setAiAnalysis] = useState<any>(null)
   const [aiLoading, setAiLoading] = useState(false)
+  const [showMessageDialog, setShowMessageDialog] = useState(false)
+  const [messageContent, setMessageContent] = useState('')
+  const [sendingMessage, setSendingMessage] = useState(false)
+  const [executingAction, setExecutingAction] = useState<string | null>(null)
+  const { toast } = useToast()
 
   useEffect(() => {
     const fetchParent = async () => {
@@ -72,12 +82,206 @@ export default function ParentProfilePage() {
 
       if (response.ok) {
         const data = await response.json()
-        setAiAnalysis(data.analysis)
+        // Extract analysis from the correct structure
+        if (data.success && data.results && data.results.length > 0) {
+          setAiAnalysis(data.results[0].analysis)
+        } else {
+          console.error('No analysis results found:', data)
+        }
       }
     } catch (error) {
       console.error('Failed to fetch AI analysis:', error)
     } finally {
       setAiLoading(false)
+    }
+  }
+
+  const sendMessage = async () => {
+    if (!messageContent.trim() || !parentId) return
+
+    setSendingMessage(true)
+    try {
+      const response = await fetch('/api/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          parentId,
+          message: messageContent,
+          type: 'manual'
+        })
+      })
+
+      if (response.ok) {
+        toast({
+          title: 'Message sent successfully',
+          description: `Message sent to ${parent?.name}`,
+        })
+        setMessageContent('')
+        setShowMessageDialog(false)
+      } else {
+        throw new Error('Failed to send message')
+      }
+    } catch (error) {
+      console.error('Failed to send message:', error)
+      toast({
+        title: 'Failed to send message',
+        description: 'There was an error sending the message. Please try again.',
+        variant: 'destructive',
+      })
+    } finally {
+      setSendingMessage(false)
+    }
+  }
+
+  // Recommendation action handlers
+  const executeRecommendationAction = async (recommendation: string, actionType: string) => {
+    setExecutingAction(recommendation)
+    
+    try {
+      switch (actionType) {
+        case 'send_reminder':
+          await sendPaymentReminder()
+          break
+        case 'send_message':
+          setMessageContent(`Hi ${parent?.name}, ${recommendation}`)
+          setShowMessageDialog(true)
+          break
+        case 'create_payment_plan':
+          await createPaymentPlan()
+          break
+        case 'schedule_followup':
+          await scheduleFollowup(recommendation)
+          break
+        case 'update_risk_status':
+          await updateRiskStatus()
+          break
+        default:
+          toast({
+            title: 'Action not implemented',
+            description: 'This action is not yet available.',
+            variant: 'destructive',
+          })
+      }
+    } catch (error) {
+      console.error('Failed to execute recommendation:', error)
+      toast({
+        title: 'Action failed',
+        description: 'There was an error executing this action.',
+        variant: 'destructive',
+      })
+    } finally {
+      setExecutingAction(null)
+    }
+  }
+
+  const sendPaymentReminder = async () => {
+    const response = await fetch('/api/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        parentId,
+        message: `Hi ${parent?.name}, this is a friendly reminder about your upcoming payment. Please let us know if you need any assistance.`,
+        type: 'payment_reminder'
+      })
+    })
+
+    if (response.ok) {
+      toast({
+        title: 'Payment reminder sent',
+        description: `Payment reminder sent to ${parent?.name}`,
+      })
+    } else {
+      throw new Error('Failed to send payment reminder')
+    }
+  }
+
+  const createPaymentPlan = async () => {
+    // Navigate to payment plan creation
+    window.open(`/parents/${parentId}/payment-plan/new`, '_blank')
+    toast({
+      title: 'Opening payment plan creator',
+      description: 'Payment plan creation page opened in new tab',
+    })
+  }
+
+  const scheduleFollowup = async (recommendation: string) => {
+    const response = await fetch('/api/messages/scheduled', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        parentId,
+        message: `Follow-up: ${recommendation}`,
+        scheduledFor: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 1 week from now
+        type: 'followup'
+      })
+    })
+
+    if (response.ok) {
+      toast({
+        title: 'Follow-up scheduled',
+        description: 'Follow-up message scheduled for next week',
+      })
+    } else {
+      throw new Error('Failed to schedule follow-up')
+    }
+  }
+
+  const updateRiskStatus = async () => {
+    const response = await fetch(`/api/parents/${parentId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        riskLevel: aiAnalysis?.riskLevel,
+        lastRiskAssessment: new Date()
+      })
+    })
+
+    if (response.ok) {
+      toast({
+        title: 'Risk status updated',
+        description: 'Parent risk status has been updated',
+      })
+    } else {
+      throw new Error('Failed to update risk status')
+    }
+  }
+
+  const getRecommendationActionType = (recommendation: string): string => {
+    const lower = recommendation.toLowerCase()
+    if (lower.includes('payment') && (lower.includes('remind') || lower.includes('overdue'))) {
+      return 'send_reminder'
+    } else if (lower.includes('payment plan') || lower.includes('installment')) {
+      return 'create_payment_plan'
+    } else if (lower.includes('follow up') || lower.includes('contact') || lower.includes('call')) {
+      return 'schedule_followup'
+    } else if (lower.includes('risk') || lower.includes('status')) {
+      return 'update_risk_status'
+    } else {
+      return 'send_message'
+    }
+  }
+
+  const getActionButtonText = (actionType: string): string => {
+    switch (actionType) {
+      case 'send_reminder': return 'Send Reminder'
+      case 'send_message': return 'Send Message'
+      case 'create_payment_plan': return 'Create Plan'
+      case 'schedule_followup': return 'Schedule Follow-up'
+      case 'update_risk_status': return 'Update Status'
+      default: return 'Take Action'
+    }
+  }
+
+  const getActionButtonIcon = (actionType: string) => {
+    switch (actionType) {
+      case 'send_reminder': return <Mail className="h-3 w-3" />
+      case 'send_message': return <MessageSquare className="h-3 w-3" />
+      case 'create_payment_plan': return <CreditCard className="h-3 w-3" />
+      case 'schedule_followup': return <Calendar className="h-3 w-3" />
+      case 'update_risk_status': return <Shield className="h-3 w-3" />
+      default: return <Target className="h-3 w-3" />
     }
   }
 
@@ -186,7 +390,7 @@ export default function ParentProfilePage() {
               )}
               {aiLoading ? 'AI Analyzing...' : 'AI Analysis'}
             </Button>
-            <Button variant="outline">
+            <Button variant="outline" onClick={() => setShowMessageDialog(true)}>
               <MessageSquare className="mr-2 h-4 w-4" />
               Send Message
             </Button>
@@ -397,28 +601,78 @@ export default function ParentProfilePage() {
             </CardHeader>
             <CardContent>
               {aiAnalysis?.recommendations ? (
-                <div className="space-y-3">
-                  {aiAnalysis.recommendations.slice(0, 4).map((recommendation: string, index: number) => (
-                    <div key={index} className="flex items-start space-x-3">
-                      <Badge variant="outline" className="text-xs">
-                        {index + 1}
-                      </Badge>
-                      <span className="text-sm flex-1">{recommendation}</span>
-                    </div>
-                  ))}
+                <div className="space-y-4">
+                  {aiAnalysis.recommendations.slice(0, 4).map((recommendation: string, index: number) => {
+                    const actionType = getRecommendationActionType(recommendation)
+                    const isExecuting = executingAction === recommendation
+                    
+                    return (
+                      <div key={index} className="p-3 border border-orange-200 rounded-lg bg-white/50">
+                        <div className="flex items-start justify-between space-x-3">
+                          <div className="flex items-start space-x-3 flex-1">
+                            <Badge variant="outline" className="text-xs mt-0.5">
+                              {index + 1}
+                            </Badge>
+                            <span className="text-sm flex-1">{recommendation}</span>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={isExecuting}
+                            onClick={() => executeRecommendationAction(recommendation, actionType)}
+                            className="ml-2 shrink-0 bg-gradient-to-r from-orange-500 to-yellow-500 hover:from-orange-600 hover:to-yellow-600 text-white border-none"
+                          >
+                            {isExecuting ? (
+                              <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white mr-1" />
+                            ) : (
+                              getActionButtonIcon(actionType)
+                            )}
+                            <span className="ml-1 text-xs">
+                              {isExecuting ? 'Acting...' : getActionButtonText(actionType)}
+                            </span>
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  })}
                   
                   {aiAnalysis.priorityActions && aiAnalysis.priorityActions.length > 0 && (
-                    <div className="pt-3 border-t">
-                      <h4 className="text-xs font-semibold text-red-600 mb-2 flex items-center">
+                    <div className="pt-3 border-t border-orange-200">
+                      <h4 className="text-xs font-semibold text-red-600 mb-3 flex items-center">
                         <AlertTriangle className="mr-1 h-3 w-3" />
                         Priority Actions
                       </h4>
-                      {aiAnalysis.priorityActions.slice(0, 2).map((action: string, index: number) => (
-                        <div key={index} className="flex items-start space-x-2 mb-1">
-                          <div className="w-2 h-2 bg-red-500 rounded-full mt-2 flex-shrink-0"></div>
-                          <span className="text-xs text-red-700">{action}</span>
-                        </div>
-                      ))}
+                      {aiAnalysis.priorityActions.slice(0, 2).map((action: string, index: number) => {
+                        const actionType = getRecommendationActionType(action)
+                        const isExecuting = executingAction === action
+                        
+                        return (
+                          <div key={index} className="p-3 mb-2 border border-red-200 rounded-lg bg-red-50/50">
+                            <div className="flex items-start justify-between space-x-3">
+                              <div className="flex items-start space-x-2 flex-1">
+                                <div className="w-2 h-2 bg-red-500 rounded-full mt-2 flex-shrink-0"></div>
+                                <span className="text-xs text-red-700 flex-1">{action}</span>
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={isExecuting}
+                                onClick={() => executeRecommendationAction(action, actionType)}
+                                className="ml-2 shrink-0 bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-white border-none"
+                              >
+                                {isExecuting ? (
+                                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white mr-1" />
+                                ) : (
+                                  getActionButtonIcon(actionType)
+                                )}
+                                <span className="ml-1 text-xs">
+                                  {isExecuting ? 'Acting...' : getActionButtonText(actionType)}
+                                </span>
+                              </Button>
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
                 </div>
@@ -517,6 +771,33 @@ export default function ParentProfilePage() {
           </Card>
         )}
       </div>
+
+      {/* Send Message Dialog */}
+      <Dialog open={showMessageDialog} onOpenChange={setShowMessageDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Send Message to {parent?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Label htmlFor="message">Message</Label>
+            <Textarea
+              id="message"
+              value={messageContent}
+              onChange={(e) => setMessageContent(e.target.value)}
+              placeholder="Type your message here..."
+              rows={5}
+            />
+            <Button onClick={sendMessage} disabled={sendingMessage}>
+              {sendingMessage ? (
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+              ) : (
+                <Send className="mr-2 h-4 w-4" />
+              )}
+              {sendingMessage ? 'Sending...' : 'Send Message'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   )
 }
