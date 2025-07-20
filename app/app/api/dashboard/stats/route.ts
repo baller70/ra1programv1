@@ -2,17 +2,18 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '../../../../lib/auth'
 import { prisma } from '../../../../lib/db'
+import { 
+  requireAuth, 
+  createErrorResponse, 
+  createSuccessResponse, 
+  isDatabaseError,
+  ApiErrors 
+} from '../../../../lib/api-utils'
 
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions)
-    
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    await requireAuth()
 
     // Get current date for calculations
     const now = new Date()
@@ -80,12 +81,28 @@ export async function GET() {
       messagesSentThisMonth
     }
 
-    return NextResponse.json(stats)
+    return createSuccessResponse(stats)
   } catch (error) {
     console.error('Dashboard stats error:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch dashboard stats' },
-      { status: 500 }
-    )
+    
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') {
+      return createErrorResponse(ApiErrors.UNAUTHORIZED)
+    }
+    
+    if (isDatabaseError(error)) {
+      return createErrorResponse(ApiErrors.DATABASE_ERROR, {
+        message: 'Please check database configuration',
+        fallbackStats: {
+          totalParents: 0,
+          totalRevenue: 0,
+          overduePayments: 0,
+          upcomingDues: 0,
+          activePaymentPlans: 0,
+          messagesSentThisMonth: 0
+        }
+      })
+    }
+    
+    return createErrorResponse(ApiErrors.INTERNAL_ERROR)
   }
 }

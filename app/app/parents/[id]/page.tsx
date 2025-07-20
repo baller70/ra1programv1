@@ -135,6 +135,66 @@ export default function ParentProfilePage() {
     }
   }
 
+  const generateAIMessage = async () => {
+    if (!parentId || !parent) return
+
+    setSendingMessage(true)
+    try {
+      // Generate AI message based on parent data and analysis
+      const response = await fetch('/api/ai/generate-message', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          parentId,
+          parentName: parent.name,
+          context: {
+            riskLevel: aiAnalysis?.riskLevel || 'unknown',
+            riskScore: aiAnalysis?.riskScore || 0,
+            paymentStatus: parent.payments?.length > 0 ? 'has_payments' : 'no_payments',
+            overduePayments: parent.payments?.filter(p => new Date(p.dueDate) < new Date()).length || 0,
+            contractStatus: parent.contractStatus,
+            recentCommunications: parent.messageLogs?.length || 0,
+            keyInsights: aiAnalysis?.keyInsights || [],
+            recommendations: aiAnalysis?.recommendations || []
+          },
+          messageType: 'personalized_check_in'
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success && data.message) {
+          // Handle the message structure (it has subject and body)
+          const messageText = data.message.body || data.message
+          setMessageContent(messageText)
+          setShowMessageDialog(true)
+          toast({
+            title: 'AI message generated',
+            description: 'Personalized message created based on parent analysis',
+          })
+        } else {
+          throw new Error('No message generated')
+        }
+      } else {
+        throw new Error('Failed to generate AI message')
+      }
+    } catch (error) {
+      console.error('Failed to generate AI message:', error)
+      toast({
+        title: 'Failed to generate message',
+        description: 'Could not generate AI message. Opening empty dialog instead.',
+        variant: 'destructive',
+      })
+      // Fallback to empty dialog
+      setMessageContent('')
+      setShowMessageDialog(true)
+    } finally {
+      setSendingMessage(false)
+    }
+  }
+
   // Recommendation action handlers
   const executeRecommendationAction = async (recommendation: string, actionType: string) => {
     setExecutingAction(recommendation)
@@ -390,9 +450,13 @@ export default function ParentProfilePage() {
               )}
               {aiLoading ? 'AI Analyzing...' : 'AI Analysis'}
             </Button>
-            <Button variant="outline" onClick={() => setShowMessageDialog(true)}>
-              <MessageSquare className="mr-2 h-4 w-4" />
-              Send Message
+            <Button variant="outline" onClick={generateAIMessage} disabled={sendingMessage}>
+              {sendingMessage ? (
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600 mr-2" />
+              ) : (
+                <MessageSquare className="mr-2 h-4 w-4" />
+              )}
+              {sendingMessage ? 'Generating...' : 'Send Message'}
             </Button>
             <Button asChild>
               <Link href={`/parents/${parent.id}/edit`}>
@@ -774,27 +838,46 @@ export default function ParentProfilePage() {
 
       {/* Send Message Dialog */}
       <Dialog open={showMessageDialog} onOpenChange={setShowMessageDialog}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Send Message to {parent?.name}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Brain className="h-5 w-5 text-purple-600" />
+              AI-Generated Message for {parent?.name}
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              This message was personalized based on {parent?.name}'s profile, payment history, and AI analysis. 
+              You can edit it before sending.
+            </p>
           </DialogHeader>
           <div className="space-y-4">
-            <Label htmlFor="message">Message</Label>
+            <Label htmlFor="message">Message Content</Label>
             <Textarea
               id="message"
               value={messageContent}
               onChange={(e) => setMessageContent(e.target.value)}
-              placeholder="Type your message here..."
-              rows={5}
+              placeholder="AI-generated message will appear here..."
+              rows={6}
+              className="min-h-[120px]"
             />
-            <Button onClick={sendMessage} disabled={sendingMessage}>
-              {sendingMessage ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-              ) : (
-                <Send className="mr-2 h-4 w-4" />
-              )}
-              {sendingMessage ? 'Sending...' : 'Send Message'}
-            </Button>
+            <div className="flex items-center justify-between">
+              <Button 
+                variant="outline" 
+                onClick={generateAIMessage} 
+                disabled={sendingMessage}
+                size="sm"
+              >
+                <Brain className="mr-2 h-3 w-3" />
+                Regenerate AI Message
+              </Button>
+              <Button onClick={sendMessage} disabled={sendingMessage || !messageContent.trim()}>
+                {sendingMessage ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                ) : (
+                  <Send className="mr-2 h-4 w-4" />
+                )}
+                {sendingMessage ? 'Sending...' : 'Send Message'}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

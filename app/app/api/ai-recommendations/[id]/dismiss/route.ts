@@ -2,17 +2,12 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '../../../../../lib/auth'
+import { requireAuth } from '../../../../../lib/api-utils'
 import { prisma } from '../../../../../lib/db'
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
-    const session = await getServerSession(authOptions)
-    
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const user = await requireAuth()
 
     const body = await request.json()
     const { reason, feedback } = body
@@ -21,7 +16,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       where: { id: params.id },
       data: {
         dismissedAt: new Date(),
-        dismissedBy: session.user.email!,
+        dismissedBy: user.user.id,
         dismissReason: reason || 'User dismissed',
         feedback: feedback || null
       }

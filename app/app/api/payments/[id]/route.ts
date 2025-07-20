@@ -2,39 +2,87 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '../../../../lib/auth'
 import { prisma } from '../../../../lib/db'
+import { requireAuth } from '../../../../lib/api-utils'
 
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions)
-    
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    await requireAuth()
 
     const payment = await prisma.payment.findUnique({
-      where: { id: params.id },
+      where: {
+        id: params.id
+      },
       include: {
-        parent: true,
-        paymentPlan: true,
+        parent: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+          },
+        },
+        paymentPlan: {
+          select: {
+            id: true,
+            type: true,
+            totalAmount: true,
+            installmentAmount: true,
+            description: true,
+          },
+        },
         reminders: {
-          orderBy: { scheduledFor: 'desc' }
-        }
-      }
+          select: {
+            id: true,
+            reminderType: true,
+            scheduledFor: true,
+            status: true,
+          },
+          orderBy: { scheduledFor: 'desc' },
+        },
+      },
     })
 
     if (!payment) {
-      return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
+      return NextResponse.json(
+        { error: 'Payment not found' },
+        { status: 404 }
+      )
     }
 
-    return NextResponse.json(payment)
+    // Fetch contracts for the parent
+    const contracts = await prisma.contract.findMany({
+      where: {
+        parentId: payment.parent.id
+      },
+      select: {
+        id: true,
+        fileName: true,
+        originalName: true,
+        status: true,
+        uploadedAt: true,
+        signedAt: true,
+        expiresAt: true,
+        templateType: true,
+        version: true
+      },
+      orderBy: {
+        uploadedAt: 'desc'
+      }
+    })
+
+    return NextResponse.json({
+      ...payment,
+      parent: {
+        ...payment.parent,
+        contracts: contracts
+      }
+    })
   } catch (error) {
-    console.error('Payment fetch error:', error)
+    console.error('Error fetching payment:', error)
     return NextResponse.json(
       { error: 'Failed to fetch payment' },
       { status: 500 }
@@ -42,58 +90,58 @@ export async function GET(
   }
 }
 
-export async function PUT(
+export async function PATCH(
   request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions)
-    
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    await requireAuth()
 
     const body = await request.json()
-    const {
-      status,
-      amount,
-      dueDate,
-      paidAt,
-      failureReason,
-      notes
-    } = body
-
-    const updateData: any = {
-      updatedAt: new Date()
-    }
-
-    if (status !== undefined) {
-      updateData.status = status
-      if (status === 'paid' && !paidAt) {
-        updateData.paidAt = new Date()
-      } else if (status !== 'paid') {
-        updateData.paidAt = null
-      }
-    }
-
-    if (amount !== undefined) updateData.amount = amount
-    if (dueDate !== undefined) updateData.dueDate = new Date(dueDate)
-    if (paidAt !== undefined) updateData.paidAt = paidAt ? new Date(paidAt) : null
-    if (failureReason !== undefined) updateData.failureReason = failureReason
-    if (notes !== undefined) updateData.notes = notes
+    const { status, paidAt, notes } = body
 
     const payment = await prisma.payment.update({
-      where: { id: params.id },
-      data: updateData,
+      where: {
+        id: params.id
+      },
+      data: {
+        ...(status && { status }),
+        ...(paidAt && { paidAt: new Date(paidAt) }),
+        ...(notes !== undefined && { notes }),
+      },
       include: {
-        parent: true,
-        paymentPlan: true
-      }
+        parent: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+          },
+        },
+        paymentPlan: {
+          select: {
+            id: true,
+            type: true,
+            totalAmount: true,
+            installmentAmount: true,
+            description: true,
+          },
+        },
+        reminders: {
+          select: {
+            id: true,
+            reminderType: true,
+            scheduledFor: true,
+            status: true,
+          },
+          orderBy: { scheduledFor: 'desc' },
+        },
+      },
     })
 
     return NextResponse.json(payment)
   } catch (error) {
-    console.error('Payment update error:', error)
+    console.error('Error updating payment:', error)
     return NextResponse.json(
       { error: 'Failed to update payment' },
       { status: 500 }
@@ -106,11 +154,8 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions)
+    await requireAuth()
     
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
 
     const payment = await prisma.payment.findUnique({
       where: { id: params.id }

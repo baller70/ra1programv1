@@ -159,6 +159,8 @@ async function handleInvoiceCreated(invoice: Stripe.Invoice) {
 }
 
 async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
+  console.log('Processing invoice payment succeeded:', invoice.id)
+  
   // Update invoice status
   await prisma.stripeInvoice.updateMany({
     where: { stripeInvoiceId: invoice.id },
@@ -170,42 +172,138 @@ async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
     }
   })
 
-  // Update related payment if exists
-  const payment = await prisma.payment.findUnique({
+  // Find the parent associated with this Stripe customer
+  const parent = await prisma.parent.findUnique({
+    where: { stripeCustomerId: invoice.customer as string },
+    include: {
+      payments: {
+        where: {
+          status: {
+            in: ['pending', 'overdue']
+          }
+        },
+        orderBy: {
+          dueDate: 'asc'
+        }
+      },
+      paymentPlans: true
+    }
+  })
+
+  if (!parent) {
+    console.log('No parent found for Stripe customer:', invoice.customer)
+    return
+  }
+
+  console.log(`Found parent ${parent.name} with ${parent.payments.length} pending payments`)
+
+  // Update the specific payment linked to this invoice
+  const directPayment = await prisma.payment.findUnique({
     where: { stripeInvoiceId: invoice.id }
   })
 
-  if (payment) {
+  if (directPayment) {
     await prisma.payment.update({
-      where: { id: payment.id },
+      where: { id: directPayment.id },
       data: {
         status: 'paid',
-        paidAt: new Date()
+        paidAt: new Date(),
+        stripePaymentId: invoice.charge as string || null
       }
     })
 
-    // Check if this payment completion should stop any recurring messages
-    const parent = await prisma.parent.findUnique({
-      where: { id: payment.parentId }
-    })
+    console.log(`Updated direct payment ${directPayment.id} to paid status`)
+  }
 
-    if (parent) {
-      await prisma.recurringRecipient.updateMany({
-        where: {
-          parentId: parent.id,
-          isActive: true,
-          stopReason: null
-        },
+  // If this is a subscription payment or bulk payment, 
+  // apply the payment to the oldest pending payments
+  const paidAmount = invoice.amount_paid / 100 // Convert from cents
+  let remainingAmount = paidAmount
+
+  for (const payment of parent.payments) {
+    if (remainingAmount <= 0) break
+
+    const paymentAmount = Number(payment.amount)
+    
+    if (remainingAmount >= paymentAmount) {
+      // Full payment
+      await prisma.payment.update({
+        where: { id: payment.id },
         data: {
-          isActive: false,
-          stoppedAt: new Date(),
-          stopReason: 'payment_completion',
-          paymentCompleted: true,
-          paymentCompletedAt: new Date()
+          status: 'paid',
+          paidAt: new Date(),
+          stripePaymentId: invoice.charge as string || null
         }
       })
+
+      remainingAmount -= paymentAmount
+      console.log(`Marked payment ${payment.id} as paid ($${paymentAmount})`)
+    } else {
+      // Partial payment - create a new payment for the remaining amount
+      const originalPayment = payment
+      
+      // Update original payment to paid with partial amount
+      await prisma.payment.update({
+        where: { id: originalPayment.id },
+        data: {
+          amount: remainingAmount,
+          status: 'paid',
+          paidAt: new Date(),
+          stripePaymentId: invoice.charge as string || null
+        }
+      })
+
+      // Create a new payment for the remaining balance
+      const remainingBalance = paymentAmount - remainingAmount
+      await prisma.payment.create({
+        data: {
+          parentId: parent.id,
+          paymentPlanId: originalPayment.paymentPlanId,
+          amount: remainingBalance,
+          dueDate: originalPayment.dueDate,
+          status: 'pending',
+          notes: `Remaining balance from payment ${originalPayment.id}`
+        }
+      })
+
+      remainingAmount = 0
+      console.log(`Applied partial payment to ${payment.id} ($${remainingAmount})`)
+      break
     }
   }
+
+  // Update parent's Stripe customer information if it exists
+  const stripeCustomer = await prisma.stripeCustomer.findUnique({
+    where: { stripeCustomerId: invoice.customer as string }
+  })
+
+  if (stripeCustomer) {
+    await prisma.stripeCustomer.update({
+      where: { id: stripeCustomer.id },
+      data: {
+        balance: stripeCustomer.balance + paidAmount
+      }
+    })
+  }
+
+  // Check if this payment completion should stop any recurring messages
+  if (parent.payments.length === 0 || parent.payments.every(p => p.status === 'paid')) {
+    await prisma.recurringRecipient.updateMany({
+      where: {
+        parentId: parent.id,
+        isActive: true,
+        stopReason: null
+      },
+      data: {
+        isActive: false,
+        stopReason: 'all_payments_completed',
+        stoppedAt: new Date()
+      }
+    })
+    console.log(`Stopped recurring messages for parent ${parent.name} - all payments completed`)
+  }
+
+  console.log(`Successfully processed payment for parent ${parent.name}: $${paidAmount}`)
 }
 
 async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {

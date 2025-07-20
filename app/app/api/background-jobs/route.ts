@@ -2,17 +2,14 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '../../../lib/auth'
+import { requireAuth } from '../../../lib/api-utils'
+// Clerk auth
 import { prisma } from '../../../lib/db'
 
 export async function GET(request: Request) {
   try {
-    const session = await getServerSession(authOptions)
+    await requireAuth()
     
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
 
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status')
@@ -102,11 +99,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions)
+    await requireAuth()
     
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
 
     const body = await request.json()
     const {

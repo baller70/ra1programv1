@@ -45,6 +45,11 @@ interface Template {
 function SendMessagePageContent() {
   const searchParams = useSearchParams()
   const templateId = searchParams.get('templateId')
+  const parentId = searchParams.get('parentId')
+  const parentName = searchParams.get('parentName')
+  const parentEmail = searchParams.get('parentEmail')
+  const context = searchParams.get('context')
+  const paymentId = searchParams.get('paymentId')
   
   const [parents, setParents] = useState<Parent[]>([])
   const [templates, setTemplates] = useState<Template[]>([])
@@ -58,7 +63,7 @@ function SendMessagePageContent() {
 
   useEffect(() => {
     fetchData()
-  }, [templateId])
+  }, [templateId, parentId])
 
   const fetchData = async () => {
     try {
@@ -69,12 +74,29 @@ function SendMessagePageContent() {
 
       if (parentsRes.ok) {
         const parentsData = await parentsRes.json()
-        setParents(parentsData)
+        // Extract the parents array from the API response
+        const parentsArray = Array.isArray(parentsData) ? parentsData : parentsData.parents || []
+        setParents(parentsArray)
+        
+        // If parentId is provided from payment page, pre-select that parent
+        if (parentId) {
+          setSelectedParents([parentId])
+          
+          // If parent info is provided in URL but not found in API, add it temporarily
+          if (parentName && parentEmail && !parentsArray.find((p: Parent) => p.id === parentId)) {
+            const tempParent: Parent = {
+              id: parentId,
+              name: decodeURIComponent(parentName),
+              email: decodeURIComponent(parentEmail)
+            }
+            setParents([tempParent, ...parentsArray])
+          }
+        }
       }
 
       if (templatesRes.ok) {
         const templatesData = await templatesRes.json()
-        setTemplates(templatesData)
+        setTemplates(Array.isArray(templatesData) ? templatesData : [])
         
         // If templateId is provided, select that template
         if (templateId) {
@@ -85,6 +107,10 @@ function SendMessagePageContent() {
             setBody(template.body)
             setChannel(template.channel)
           }
+        } else if (context === 'payment' && parentName && paymentId) {
+          // Pre-fill with payment-related content
+          setSubject('Regarding Your Payment')
+          setBody(`Dear ${decodeURIComponent(parentName)},\n\nI hope this message finds you well. I wanted to reach out regarding your recent payment.\n\nIf you have any questions or concerns, please don't hesitate to contact me.\n\nBest regards`)
         }
       }
     } catch (error) {
@@ -111,7 +137,7 @@ function SendMessagePageContent() {
   }
 
   const selectAllParents = () => {
-    setSelectedParents(parents.map(p => p.id))
+    setSelectedParents(Array.isArray(parents) ? parents.map(p => p.id) : [])
   }
 
   const clearSelection = () => {
@@ -196,16 +222,28 @@ function SendMessagePageContent() {
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <Button asChild variant="outline" size="sm">
-              <Link href="/communication">
+              <Link href={context === 'payment' && paymentId ? `/payments/${paymentId}` : "/communication"}>
                 <ArrowLeft className="mr-2 h-4 w-4" />
-                Back to Communication
+                {context === 'payment' ? 'Back to Payment' : 'Back to Communication'}
               </Link>
             </Button>
             <div>
-              <h1 className="text-3xl font-bold tracking-tight">Send Message</h1>
+              <h1 className="text-3xl font-bold tracking-tight">
+                {context === 'payment' ? 'Contact Parent' : 'Send Message'}
+              </h1>
               <p className="text-muted-foreground">
-                Compose and send messages to parents (creates Gmail drafts)
+                {context === 'payment' 
+                  ? `Send a message to ${parentName ? decodeURIComponent(parentName) : 'parent'} regarding their payment`
+                  : 'Compose and send messages to parents (creates Gmail drafts)'
+                }
               </p>
+              {context === 'payment' && (
+                <div className="mt-2">
+                  <Badge variant="outline" className="text-xs">
+                    Payment Context
+                  </Badge>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -223,7 +261,7 @@ function SendMessagePageContent() {
               </CardHeader>
               <CardContent>
                 <div className="grid gap-2 max-h-40 overflow-y-auto">
-                  {templates.filter(t => t.isActive).map((template) => (
+                  {Array.isArray(templates) && templates.filter(t => t.isActive).map((template) => (
                     <div
                       key={template.id}
                       className={`p-3 border rounded-lg cursor-pointer transition-colors ${
@@ -314,11 +352,21 @@ function SendMessagePageContent() {
                   <div className="flex items-center gap-2">
                     <Users className="h-5 w-5" />
                     Recipients
+                    {context === 'payment' && (
+                      <Badge variant="secondary" className="text-xs ml-2">
+                        Pre-selected
+                      </Badge>
+                    )}
                   </div>
                   <span className="text-sm text-muted-foreground">
                     {selectedParents.length}/{parents.length}
                   </span>
                 </CardTitle>
+                {context === 'payment' && (
+                  <p className="text-sm text-muted-foreground">
+                    Parent automatically selected from payment context
+                  </p>
+                )}
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center space-x-2">
@@ -331,7 +379,7 @@ function SendMessagePageContent() {
                 </div>
 
                 <div className="space-y-2 max-h-80 overflow-y-auto">
-                  {parents.map((parent) => (
+                  {Array.isArray(parents) && parents.map((parent) => (
                     <div
                       key={parent.id}
                       className="flex items-center space-x-3 p-2 border rounded-lg"

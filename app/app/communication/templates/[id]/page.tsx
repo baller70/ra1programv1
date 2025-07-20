@@ -245,11 +245,18 @@ export default function TemplateDetailPage() {
                     <div>
                       <label className="text-sm font-medium text-muted-foreground">Variables Used</label>
                       <div className="mt-1 flex flex-wrap gap-2">
-                        {(template.variables ?? []).map((variable) => (
-                          <Badge key={variable} variant="outline">
-                            {`{${variable}}`}
-                          </Badge>
-                        ))}
+                        {(() => {
+                          try {
+                            const variables = template.variables ? JSON.parse(template.variables) as string[] : []
+                            return variables.map((variable) => (
+                              <Badge key={variable} variant="outline">
+                                {`{${variable}}`}
+                              </Badge>
+                            ))
+                          } catch {
+                            return null
+                          }
+                        })()}
                       </div>
                     </div>
                   </>

@@ -1,9 +1,7 @@
 
 'use client'
 
-import { useSession } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
+import { useUser } from '@clerk/nextjs'
 import { Header } from './header'
 
 interface AppLayoutProps {
@@ -11,18 +9,9 @@ interface AppLayoutProps {
 }
 
 export function AppLayout({ children }: AppLayoutProps) {
-  const { data: session, status } = useSession()
-  const router = useRouter()
+  const { isLoaded, isSignedIn } = useUser()
 
-  useEffect(() => {
-    if (status === 'loading') return // Still loading
-
-    if (!session) {
-      router.push('/auth/signin')
-    }
-  }, [session, status, router])
-
-  if (status === 'loading') {
+  if (!isLoaded) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600"></div>
@@ -30,8 +19,15 @@ export function AppLayout({ children }: AppLayoutProps) {
     )
   }
 
-  if (!session) {
-    return null
+  if (!isSignedIn) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold mb-4">Please sign in</h1>
+          <p className="text-muted-foreground">You need to be signed in to access this page.</p>
+        </div>
+      </div>
+    )
   }
 
   return (

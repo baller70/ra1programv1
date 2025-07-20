@@ -1,92 +1,19 @@
 
-import { NextAuthOptions } from 'next-auth'
-import CredentialsProvider from 'next-auth/providers/credentials'
-import { PrismaAdapter } from '@next-auth/prisma-adapter'
-import bcrypt from 'bcryptjs'
-import { prisma } from './db'
+import { auth } from '@clerk/nextjs/server'
 
-export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma),
-  providers: [
-    CredentialsProvider({
-      name: 'credentials',
-      credentials: {
-        email: { label: 'Email', type: 'email' },
-        password: { label: 'Password', type: 'password' }
-      },
-      async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
-          return null
-        }
-
-        // Development bypass for demo credentials
-        if (credentials.email === 'john@doe.com' && credentials.password === 'johndoe123') {
-          return {
-            id: 'dev-user-1',
-            email: 'john@doe.com',
-            name: 'John Doe',
-            role: 'admin',
-          }
-        }
-
-        try {
-          const user = await prisma.user.findUnique({
-            where: {
-              email: credentials.email
-            }
-          })
-
-          if (!user || !user.password) {
-            return null
-          }
-
-          const isPasswordValid = await bcrypt.compare(
-            credentials.password,
-            user.password
-          )
-
-          if (!isPasswordValid) {
-            return null
-          }
-
-          return {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            role: (user as any).role,
-          }
-        } catch (error) {
-          console.error('Database connection error:', error)
-          return null
-        }
-      }
-    })
-  ],
-  session: {
-    strategy: 'jwt'
-  },
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        return {
-          ...token,
-          role: (user as any).role,
-        }
-      }
-      return token
-    },
-    async session({ session, token }) {
-      return {
-        ...session,
-        user: {
-          ...session.user,
-          id: token.sub,
-          role: token.role,
-        }
-      }
-    }
-  },
-  pages: {
-    signIn: '/auth/signin',
-  }
+// Clerk auth utility functions
+export async function getServerSession() {
+  const { userId } = await auth()
+  return userId ? { user: { id: userId } } : null
 }
+
+export async function requireAuth() {
+  const { userId } = await auth()
+  if (!userId) {
+    throw new Error('Unauthorized')
+  }
+  return { user: { id: userId } }
+}
+
+// For backward compatibility with NextAuth patterns
+export const authOptions = null // Not needed with Clerk

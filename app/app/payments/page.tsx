@@ -10,6 +10,7 @@ import { AIInput } from '../../components/ui/ai-input'
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card'
 import { Badge } from '../../components/ui/badge'
 import { Checkbox } from '../../components/ui/checkbox'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs'
 import { 
   Plus, 
   Search, 
@@ -32,18 +33,50 @@ import {
   Wand2,
   Sparkles,
   Target,
-  Shield
+  Shield,
+  User,
+  Phone,
+  FileText,
+  Bell,
+  Building2,
+  GraduationCap,
+  Dumbbell,
+  Home,
+  Settings,
+  Edit,
+  Trash2,
+  UserPlus
 } from 'lucide-react'
 import Link from 'next/link'
 import { PaymentWithRelations, PaymentStats, PaymentAnalytics } from '../../lib/types'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../../components/ui/dialog'
+import { Label } from '../../components/ui/label'
+import { toast } from '../../components/ui/use-toast'
+
+// Program configuration
+const PROGRAMS = [
+  { id: 'yearly-program', name: 'Yearly Program' },
+  { id: 'fall-aau', name: 'Fall AAU' },
+  { id: 'winter-aau', name: 'Winter AAU' },
+  { id: 'spring-aau', name: 'Spring AAU' },
+  { id: 'summer-aau', name: 'Summer AAU' },
+  { id: 'tbf-programs', name: 'TBF Programs' },
+  { id: 'lane-back-menu', name: 'Lane from Kevin\'s Back Menu' },
+  { id: 'kevin-lessons', name: 'Kevin Houston\'s Lessons' },
+  { id: 'thos-facility', name: 'THOS Facility Rentals' }
+]
+
 
 // Dynamic import for charts
 // @ts-ignore
 const Recharts = dynamic(() => import('recharts'), { ssr: false, loading: () => <div>Loading chart...</div> })
 
 export default function PaymentsPage() {
+  const [activeProgram, setActiveProgram] = useState('yearly-program')
   const [payments, setPayments] = useState<PaymentWithRelations[]>([])
   const [analytics, setAnalytics] = useState<PaymentAnalytics | null>(null)
+  const [teams, setTeams] = useState<any[]>([])
+  const [selectedTeam, setSelectedTeam] = useState<string>('all')
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -52,19 +85,151 @@ export default function PaymentsPage() {
   const [aiInsights, setAiInsights] = useState<any>(null)
   const [aiLoading, setAiLoading] = useState(false)
   const [showAiActions, setShowAiActions] = useState(false)
+  const [groupByTeam, setGroupByTeam] = useState(true)
+  const [showTeamDialog, setShowTeamDialog] = useState(false)
+  const [editingTeam, setEditingTeam] = useState<any>(null)
+  const [teamForm, setTeamForm] = useState({ name: '', description: '', color: '#f97316' })
 
   useEffect(() => {
     fetchData()
-  }, [statusFilter])
+    fetchTeams()
+  }, [statusFilter, activeProgram, selectedTeam])
+
+  const fetchTeams = async () => {
+    try {
+      const response = await fetch('/api/teams?includeParents=true')
+      if (response.ok) {
+        const teamsData = await response.json()
+        setTeams(teamsData)
+      }
+    } catch (error) {
+      console.error('Error fetching teams:', error)
+    }
+  }
+
+  const handleCreateTeam = async () => {
+    try {
+      const response = await fetch('/api/teams', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(teamForm)
+      })
+
+      if (response.ok) {
+        await fetchTeams()
+        setShowTeamDialog(false)
+        setTeamForm({ name: '', description: '', color: '#f97316' })
+        toast({
+          title: "Success",
+          description: "Team created successfully"
+        })
+      } else {
+        const error = await response.json()
+        toast({
+          title: "Error",
+          description: error.error || "Failed to create team",
+          variant: "destructive"
+        })
+      }
+    } catch (error) {
+      console.error('Error creating team:', error)
+      toast({
+        title: "Error",
+        description: "Failed to create team",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleEditTeam = (team: any) => {
+    setEditingTeam(team)
+    setTeamForm({ 
+      name: team.name, 
+      description: team.description || '', 
+      color: team.color || '#f97316' 
+    })
+    setShowTeamDialog(true)
+  }
+
+  const handleUpdateTeam = async () => {
+    try {
+      const response = await fetch('/api/teams', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editingTeam.id, ...teamForm })
+      })
+
+      if (response.ok) {
+        await fetchTeams()
+        setShowTeamDialog(false)
+        setEditingTeam(null)
+        setTeamForm({ name: '', description: '', color: '#f97316' })
+        toast({
+          title: "Success",
+          description: "Team updated successfully"
+        })
+      } else {
+        const error = await response.json()
+        toast({
+          title: "Error",
+          description: error.error || "Failed to update team",
+          variant: "destructive"
+        })
+      }
+    } catch (error) {
+      console.error('Error updating team:', error)
+      toast({
+        title: "Error",
+        description: "Failed to update team",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleDeleteTeam = async (teamId: string) => {
+    if (!confirm('Are you sure you want to delete this team? This action cannot be undone.')) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/teams?id=${teamId}`, {
+        method: 'DELETE'
+      })
+
+      if (response.ok) {
+        await fetchTeams()
+        toast({
+          title: "Success",
+          description: "Team deleted successfully"
+        })
+      } else {
+        const error = await response.json()
+        toast({
+          title: "Error",
+          description: error.error || "Failed to delete team",
+          variant: "destructive"
+        })
+      }
+    } catch (error) {
+      console.error('Error deleting team:', error)
+      toast({
+        title: "Error",
+        description: "Failed to delete team",
+        variant: "destructive"
+      })
+    }
+  }
 
   const fetchData = async () => {
     try {
       const params = new URLSearchParams()
       if (statusFilter !== 'all') params.append('status', statusFilter)
+      if (selectedTeam !== 'all') params.append('teamId', selectedTeam)
+      params.append('program', activeProgram)
 
       const [paymentsRes, analyticsRes] = await Promise.all([
         fetch(`/api/payments?${params}`),
-        fetch('/api/payments/analytics')
+        fetch(`/api/payments/analytics?${params}`)
       ])
 
       if (paymentsRes.ok) {
@@ -86,8 +251,20 @@ export default function PaymentsPage() {
   const filteredPayments = payments.filter(payment => {
     const matchesSearch = payment.parent?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          payment.parent?.email?.toLowerCase().includes(searchTerm.toLowerCase())
-    return matchesSearch
+    return searchTerm ? matchesSearch : true
   })
+
+  // Group payments by team if enabled
+  const groupedPayments = groupByTeam ? 
+    filteredPayments.reduce((groups: Record<string, PaymentWithRelations[]>, payment) => {
+      const teamKey = payment.parent?.team?.name || 'Unassigned'
+      if (!groups[teamKey]) {
+        groups[teamKey] = []
+      }
+      groups[teamKey].push(payment)
+      return groups
+    }, {}) : 
+    { 'All Payments': filteredPayments }
 
   const handlePaymentSelection = (paymentId: string, selected: boolean) => {
     if (selected) {
@@ -325,6 +502,29 @@ export default function PaymentsPage() {
             </Button>
           </div>
         </div>
+
+        {/* Program Tabs */}
+        <Tabs value={activeProgram} onValueChange={setActiveProgram} className="w-full">
+          <TabsList className="grid w-full grid-cols-9 h-auto p-1">
+            {PROGRAMS.map((program) => (
+              <TabsTrigger 
+                key={program.id} 
+                value={program.id}
+                className="text-xs px-2 py-2 data-[state=active]:bg-orange-500 data-[state=active]:text-white"
+              >
+                {program.name}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+
+          {/* Tab Content - Same content for each program */}
+          {PROGRAMS.map((program) => (
+            <TabsContent key={program.id} value={program.id} className="mt-6">
+              <div className="space-y-6">
+                {/* Show current program name in title */}
+                <div className="text-lg font-semibold text-orange-600">
+                  {program.name} - Payment Dashboard
+                </div>
 
         {/* Analytics Cards */}
         <div className="grid gap-4 md:grid-cols-6">
@@ -572,7 +772,7 @@ export default function PaymentsPage() {
         {/* Filters */}
         <Card>
           <CardContent className="pt-6">
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-4 mb-4">
               <div className="flex items-center space-x-2">
                 <Button size="sm" variant="outline" onClick={selectAllPayments}>
                   Select All
@@ -597,6 +797,19 @@ export default function PaymentsPage() {
                 </div>
               </div>
               <select
+                value={selectedTeam}
+                onChange={(e) => setSelectedTeam(e.target.value)}
+                className="px-3 py-2 border border-input rounded-md bg-background"
+              >
+                <option value="all">All Teams</option>
+                <option value="unassigned">Unassigned</option>
+                {teams.map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.name} ({team._count.parents})
+                  </option>
+                ))}
+              </select>
+              <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
                 className="px-3 py-2 border border-input rounded-md bg-background"
@@ -612,6 +825,118 @@ export default function PaymentsPage() {
                 Refresh
               </Button>
             </div>
+            
+            {/* Team Organization Toggle */}
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="groupByTeam"
+                  checked={groupByTeam}
+                  onCheckedChange={(checked) => setGroupByTeam(checked as boolean)}
+                />
+                <label htmlFor="groupByTeam" className="text-sm font-medium">
+                  Group by Team
+                </label>
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {selectedTeam !== 'all' 
+                  ? `Showing ${selectedTeam === 'unassigned' ? 'unassigned parents' : teams.find(t => t.id === selectedTeam)?.name || 'selected team'}`
+                  : `${teams.length} teams available`
+                }
+              </div>
+              <div className="ml-auto flex items-center space-x-2">
+                <Dialog open={showTeamDialog} onOpenChange={setShowTeamDialog}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" size="sm" onClick={() => {
+                      setEditingTeam(null)
+                      setTeamForm({ name: '', description: '', color: '#f97316' })
+                    }}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      New Team
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>{editingTeam ? 'Edit Team' : 'Create New Team'}</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div>
+                        <Label htmlFor="teamName">Team Name</Label>
+                        <Input
+                          id="teamName"
+                          value={teamForm.name}
+                          onChange={(e) => setTeamForm({ ...teamForm, name: e.target.value })}
+                          placeholder="e.g., Rises as One Red"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="teamDescription">Description (Optional)</Label>
+                        <Input
+                          id="teamDescription"
+                          value={teamForm.description}
+                          onChange={(e) => setTeamForm({ ...teamForm, description: e.target.value })}
+                          placeholder="Team description..."
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="teamColor">Team Color</Label>
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="color"
+                            id="teamColor"
+                            value={teamForm.color}
+                            onChange={(e) => setTeamForm({ ...teamForm, color: e.target.value })}
+                            className="w-12 h-8 rounded border"
+                          />
+                          <Input
+                            value={teamForm.color}
+                            onChange={(e) => setTeamForm({ ...teamForm, color: e.target.value })}
+                            placeholder="#f97316"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex justify-end space-x-2">
+                        <Button variant="outline" onClick={() => setShowTeamDialog(false)}>
+                          Cancel
+                        </Button>
+                        <Button onClick={editingTeam ? handleUpdateTeam : handleCreateTeam}>
+                          {editingTeam ? 'Update' : 'Create'} Team
+                        </Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+                
+                {teams.length > 0 && (
+                  <div className="flex items-center space-x-1">
+                    {teams.slice(0, 3).map((team) => (
+                      <div
+                        key={team.id}
+                        className="flex items-center space-x-1 text-xs bg-muted px-2 py-1 rounded"
+                      >
+                        <div
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: team.color || '#f97316' }}
+                        />
+                        <span>{team.name}</span>
+                        <span className="text-muted-foreground">({team._count.parents})</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-4 w-4 p-0 ml-1"
+                          onClick={() => handleEditTeam(team)}
+                        >
+                          <Edit className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))}
+                    {teams.length > 3 && (
+                      <span className="text-xs text-muted-foreground">+{teams.length - 3} more</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
           </CardContent>
         </Card>
 
@@ -622,90 +947,137 @@ export default function PaymentsPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {filteredPayments.length > 0 ? (
-                filteredPayments.map((payment) => (
-                  <div key={payment.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
-                    <div className="flex items-center space-x-4">
-                      <Checkbox
-                        checked={selectedPayments.includes(payment.id)}
-                        onCheckedChange={(checked) => handlePaymentSelection(payment.id, checked as boolean)}
-                      />
-                      <div className="flex items-center space-x-2">
-                        <Badge variant={getStatusVariant(payment.status)} className="flex items-center space-x-1">
-                          {getStatusIcon(payment.status)}
-                          <span>{payment.status}</span>
-                        </Badge>
-                        {payment.paymentPlan && (
-                          <Badge variant="outline" className="capitalize">
-                            {payment.paymentPlan.type}
-                          </Badge>
-                        )}
+              {Object.entries(groupedPayments).map(([groupName, groupPayments]) => {
+                const team = teams.find(t => t.name === groupName)
+                const isUnassigned = groupName === 'Unassigned'
+                
+                return (
+                  <div key={groupName} className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <div
+                          className="w-4 h-4 rounded-full"
+                          style={{ 
+                            backgroundColor: isUnassigned ? '#6b7280' : (team?.color || '#f97316')
+                          }}
+                        />
+                        <h3 className="text-lg font-semibold text-orange-600">
+                          {groupName} ({groupPayments.length} {groupPayments.length === 1 ? 'payment' : 'payments'})
+                        </h3>
                       </div>
-                      <div>
-                        <p className="font-medium">{payment.parent?.name}</p>
-                        <p className="text-sm text-muted-foreground">{payment.parent?.email}</p>
-                        {payment.remindersSent > 0 && (
-                          <p className="text-xs text-orange-600">
-                            {payment.remindersSent} reminder{payment.remindersSent !== 1 ? 's' : ''} sent
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className="text-right">
-                      <p className="text-xl font-semibold">${Number(payment.amount).toLocaleString()}</p>
-                      <p className="text-sm text-muted-foreground">
-                        Due: {new Date(payment.dueDate).toLocaleDateString()}
-                      </p>
-                      {payment.paidAt && (
-                        <p className="text-sm text-green-600">
-                          Paid: {new Date(payment.paidAt).toLocaleDateString()}
-                        </p>
-                      )}
-                      {payment.status === 'overdue' && (
-                        <p className="text-sm text-red-600">
-                          {Math.floor((new Date().getTime() - new Date(payment.dueDate).getTime()) / (1000 * 60 * 60 * 24))} days overdue
-                        </p>
+                      {team && (
+                        <div className="flex items-center space-x-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEditTeam(team)}
+                          >
+                            <Settings className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteTeam(team.id)}
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       )}
                     </div>
                     
-                    <div className="flex items-center space-x-2">
-                      <Button asChild variant="outline" size="sm">
-                        <Link href={`/payments/${payment.id}`}>
-                          <Eye className="mr-2 h-4 w-4" />
-                          View
-                        </Link>
-                      </Button>
-                      {payment.status === 'pending' && (
-                        <Button size="sm">
-                          <CheckCircle className="mr-2 h-4 w-4" />
-                          Mark Paid
+                    {groupPayments.length > 0 ? (
+                      <div className="space-y-3 border-l-4 pl-4" style={{ 
+                        borderColor: isUnassigned ? '#6b7280' : (team?.color || '#f97316')
+                      }}>
+                        {groupPayments.map((payment) => (
+                          <div key={payment.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
+                            <div className="flex items-center space-x-4">
+                              <Checkbox
+                                checked={selectedPayments.includes(payment.id)}
+                                onCheckedChange={(checked) => handlePaymentSelection(payment.id, checked as boolean)}
+                              />
+                              <div className="flex items-center space-x-2">
+                                <Badge variant={getStatusVariant(payment.status)} className="flex items-center space-x-1">
+                                  {getStatusIcon(payment.status)}
+                                  <span>{payment.status}</span>
+                                </Badge>
+                                {payment.paymentPlan && (
+                                  <Badge variant="outline" className="capitalize">
+                                    {payment.paymentPlan.type}
+                                  </Badge>
+                                )}
+                              </div>
+                              <div>
+                                <p className="font-medium">{payment.parent?.name}</p>
+                                <p className="text-sm text-muted-foreground">{payment.parent?.email}</p>
+                                {payment.remindersSent > 0 && (
+                                  <p className="text-xs text-orange-600">
+                                    {payment.remindersSent} reminder{payment.remindersSent !== 1 ? 's' : ''} sent
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            
+                            <div className="text-right">
+                              <p className="text-xl font-semibold">${Number(payment.amount).toLocaleString()}</p>
+                              <p className="text-sm text-muted-foreground">
+                                Due: {new Date(payment.dueDate).toLocaleDateString()}
+                              </p>
+                              {payment.paidAt && (
+                                <p className="text-sm text-green-600">
+                                  Paid: {new Date(payment.paidAt).toLocaleDateString()}
+                                </p>
+                              )}
+                              {payment.status === 'overdue' && (
+                                <p className="text-sm text-red-600">
+                                  {Math.floor((new Date().getTime() - new Date(payment.dueDate).getTime()) / (1000 * 60 * 60 * 24))} days overdue
+                                </p>
+                              )}
+                            </div>
+                            
+                            <div className="flex items-center space-x-2">
+                              <Button asChild variant="outline" size="sm">
+                                <Link href={`/payments/${payment.id}`}>
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  View
+                                </Link>
+                              </Button>
+                              {payment.status === 'pending' && (
+                                <Button size="sm">
+                                  <CheckCircle className="mr-2 h-4 w-4" />
+                                  Mark Paid
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8">
+                        <DollarSign className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                        <h3 className="text-lg font-semibold mb-2">No payments found in this group</h3>
+                        <p className="text-muted-foreground mb-4">
+                          Try adjusting your search criteria or status filter.
+                        </p>
+                        <Button asChild>
+                          <Link href="/payment-plans/new">
+                            <Plus className="mr-2 h-4 w-4" />
+                            Create Payment Plan
+                          </Link>
                         </Button>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
-                ))
-              ) : (
-                <div className="text-center py-12">
-                  <DollarSign className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">No payments found</h3>
-                  <p className="text-muted-foreground mb-4">
-                    {searchTerm || statusFilter !== 'all' 
-                      ? 'Try adjusting your search criteria'
-                      : 'Payment records will appear here once you start managing payments'
-                    }
-                  </p>
-                  <Button asChild>
-                    <Link href="/payment-plans/new">
-                      <Plus className="mr-2 h-4 w-4" />
-                      Create Payment Plan
-                    </Link>
-                  </Button>
-                </div>
-              )}
+                )
+              })}
             </div>
           </CardContent>
         </Card>
+              </div>
+            </TabsContent>
+          ))}
+        </Tabs>
       </div>
     </AppLayout>
   )

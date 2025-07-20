@@ -2,17 +2,14 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '../../../../lib/auth'
+import { requireAuth } from '../../../../lib/api-utils'
+// Clerk auth
 import { prisma } from '../../../../lib/db'
 
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions)
+    await requireAuth()
     
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
 
     const scheduledMessages = await prisma.scheduledMessage.findMany({
       include: {
@@ -24,10 +21,23 @@ export async function GET() {
     // Add recipient details
     const messagesWithRecipients = await Promise.all(
       scheduledMessages.map(async (message) => {
-        const recipients = await prisma.parent.findMany({
-          where: { id: { in: message.recipients } },
-          select: { id: true, name: true, email: true }
-        })
+        let recipients: { id: string; name: string; email: string }[] = []
+        try {
+          const recipientIds = JSON.parse(message.recipients) as string[]
+          if (Array.isArray(recipientIds) && recipientIds.length > 0) {
+            const recipientPromises = recipientIds.map(id => 
+              prisma.parent.findUnique({
+                where: { id },
+                select: { id: true, name: true, email: true }
+              })
+            )
+            const recipientResults = await Promise.all(recipientPromises)
+            recipients = recipientResults.filter(r => r !== null) as { id: string; name: string; email: string }[]
+          }
+        } catch (error) {
+          console.error('Error parsing recipients:', error)
+          recipients = []
+        }
 
         return {
           ...message,
@@ -48,11 +58,8 @@ export async function GET() {
 
 export async function DELETE(request: Request) {
   try {
-    const session = await getServerSession(authOptions)
+    await requireAuth()
     
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
 
     const { searchParams } = new URL(request.url)
     const messageId = searchParams.get('id')

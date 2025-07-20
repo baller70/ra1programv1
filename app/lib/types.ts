@@ -45,7 +45,14 @@ export type PaymentPlanWithRelations = PaymentPlan & {
 }
 
 export type PaymentWithRelations = Payment & {
-  parent: Parent
+  parent: Parent & {
+    contracts?: Contract[]
+    team?: {
+      id: string
+      name: string
+      color?: string
+    }
+  }
   paymentPlan?: PaymentPlan
   reminders: PaymentReminder[]
   stripeInvoice?: StripeInvoice

@@ -359,18 +359,25 @@ export default function RecurringMessagesPage() {
                 <Separator />
 
                 {/* Stop Conditions */}
-                {message.stopConditions && message.stopConditions.length > 0 && (
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-medium">Stop Conditions:</h4>
-                    <div className="flex flex-wrap gap-1">
-                      {message.stopConditions.map((condition, index) => (
-                        <Badge key={index} variant="outline" className="text-xs">
-                          {condition.replace('_', ' ')}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                {message.stopConditions && (() => {
+                  try {
+                    const conditions = JSON.parse(message.stopConditions) as string[]
+                    return conditions.length > 0 ? (
+                      <div className="space-y-2">
+                        <h4 className="text-sm font-medium">Stop Conditions:</h4>
+                        <div className="flex flex-wrap gap-1">
+                          {conditions.map((condition, index) => (
+                            <Badge key={index} variant="outline" className="text-xs">
+                              {condition.replace('_', ' ')}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null
+                  } catch {
+                    return null
+                  }
+                })()}
 
                 <Separator />
 

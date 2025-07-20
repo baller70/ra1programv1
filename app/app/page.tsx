@@ -9,7 +9,8 @@ import { RecentActivityCard } from '../components/dashboard/recent-activity'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Badge } from '../components/ui/badge'
-import { Plus, Users, CreditCard, MessageSquare, FileText, Brain, TrendingUp, AlertTriangle, Lightbulb, RefreshCw } from 'lucide-react'
+import { useToast } from '../hooks/use-toast'
+import { Plus, Users, CreditCard, MessageSquare, FileText, Brain, TrendingUp, AlertTriangle, Lightbulb, RefreshCw, Mail, Calendar, Shield, Target, Send } from 'lucide-react'
 import Link from 'next/link'
 import { DashboardStats, PaymentTrend, RecentActivity, AIAnalyticsInsight } from '../lib/types'
 
@@ -20,6 +21,8 @@ export default function DashboardPage() {
   const [aiInsights, setAiInsights] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [aiLoading, setAiLoading] = useState(false)
+  const [executingAction, setExecutingAction] = useState<string | null>(null)
+  const { toast } = useToast()
 
   const fetchAIInsights = async () => {
     try {
@@ -33,6 +36,169 @@ export default function DashboardPage() {
       console.error('Failed to fetch AI insights:', error)
     } finally {
       setAiLoading(false)
+    }
+  }
+
+  // Dashboard action handlers
+  const executeRecommendationAction = async (recommendation: string, actionType: string) => {
+    setExecutingAction(recommendation)
+    
+    try {
+      switch (actionType) {
+        case 'send_bulk_reminder':
+          await sendBulkPaymentReminder()
+          break
+        case 'generate_report':
+          await generateReport(recommendation)
+          break
+        case 'schedule_bulk_followup':
+          await scheduleBulkFollowup(recommendation)
+          break
+        case 'update_system_settings':
+          await updateSystemSettings(recommendation)
+          break
+        case 'create_automated_workflow':
+          await createAutomatedWorkflow(recommendation)
+          break
+        default:
+          toast({
+            title: 'Action not implemented',
+            description: 'This action is not yet available.',
+            variant: 'destructive',
+          })
+      }
+    } catch (error) {
+      console.error('Failed to execute recommendation:', error)
+      toast({
+        title: 'Action failed',
+        description: 'There was an error executing this action.',
+        variant: 'destructive',
+      })
+    } finally {
+      setExecutingAction(null)
+    }
+  }
+
+  const sendBulkPaymentReminder = async () => {
+    const response = await fetch('/api/communication/send-bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'payment_reminder',
+        filter: 'overdue_payments',
+        message: 'This is a friendly reminder about your overdue payment. Please contact us if you need assistance.'
+      })
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      toast({
+        title: 'Bulk reminders sent',
+        description: `Payment reminders sent to ${data.sentCount || 0} parents`,
+      })
+    } else {
+      throw new Error('Failed to send bulk reminders')
+    }
+  }
+
+  const generateReport = async (recommendation: string) => {
+    // Generate and download report
+    window.open('/api/analytics/dashboard?format=pdf', '_blank')
+    toast({
+      title: 'Report generated',
+      description: 'Analytics report opened in new tab',
+    })
+  }
+
+  const scheduleBulkFollowup = async (recommendation: string) => {
+    const response = await fetch('/api/messages/scheduled', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'bulk_followup',
+        message: `Follow-up: ${recommendation}`,
+        scheduledFor: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 1 week from now
+        filter: 'high_risk_parents'
+      })
+    })
+
+    if (response.ok) {
+      toast({
+        title: 'Bulk follow-up scheduled',
+        description: 'Follow-up messages scheduled for high-risk parents',
+      })
+    } else {
+      throw new Error('Failed to schedule bulk follow-up')
+    }
+  }
+
+  const updateSystemSettings = async (recommendation: string) => {
+    // Navigate to settings page
+    window.open('/settings?highlight=ai-recommendations', '_blank')
+    toast({
+      title: 'Opening system settings',
+      description: 'Settings page opened for system updates',
+    })
+  }
+
+  const createAutomatedWorkflow = async (recommendation: string) => {
+    const response = await fetch('/api/background-jobs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'automated_workflow',
+        description: recommendation,
+        schedule: 'daily',
+        enabled: true
+      })
+    })
+
+    if (response.ok) {
+      toast({
+        title: 'Automated workflow created',
+        description: 'New workflow created based on AI recommendation',
+      })
+    } else {
+      throw new Error('Failed to create automated workflow')
+    }
+  }
+
+  const getDashboardActionType = (recommendation: string): string => {
+    const lower = recommendation.toLowerCase()
+    if (lower.includes('payment') && (lower.includes('remind') || lower.includes('overdue'))) {
+      return 'send_bulk_reminder'
+    } else if (lower.includes('report') || lower.includes('analysis') || lower.includes('export')) {
+      return 'generate_report'
+    } else if (lower.includes('follow up') || lower.includes('contact') || lower.includes('reach out')) {
+      return 'schedule_bulk_followup'
+    } else if (lower.includes('setting') || lower.includes('config') || lower.includes('update system')) {
+      return 'update_system_settings'
+    } else if (lower.includes('automat') || lower.includes('workflow') || lower.includes('schedule')) {
+      return 'create_automated_workflow'
+    } else {
+      return 'generate_report'
+    }
+  }
+
+  const getDashboardActionButtonText = (actionType: string): string => {
+    switch (actionType) {
+      case 'send_bulk_reminder': return 'Send Reminders'
+      case 'generate_report': return 'Generate Report'
+      case 'schedule_bulk_followup': return 'Schedule Follow-up'
+      case 'update_system_settings': return 'Update Settings'
+      case 'create_automated_workflow': return 'Create Workflow'
+      default: return 'Take Action'
+    }
+  }
+
+  const getDashboardActionButtonIcon = (actionType: string) => {
+    switch (actionType) {
+      case 'send_bulk_reminder': return <Mail className="h-3 w-3" />
+      case 'generate_report': return <FileText className="h-3 w-3" />
+      case 'schedule_bulk_followup': return <Calendar className="h-3 w-3" />
+      case 'update_system_settings': return <Shield className="h-3 w-3" />
+      case 'create_automated_workflow': return <Target className="h-3 w-3" />
+      default: return <Send className="h-3 w-3" />
     }
   }
 
@@ -168,9 +334,19 @@ export default function DashboardPage() {
                 <Brain className="mr-2 h-5 w-5 text-purple-600" />
                 AI Insights & Recommendations
               </CardTitle>
-              <Badge variant="outline" className="text-purple-600 border-purple-200">
-                AI Generated
-              </Badge>
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={fetchAIInsights}
+                  disabled={aiLoading}
+                >
+                  <RefreshCw className={`h-4 w-4 ${aiLoading ? 'animate-spin' : ''}`} />
+                </Button>
+                <Badge variant="outline" className="text-purple-600 border-purple-200">
+                  AI Generated
+                </Badge>
+              </div>
             </CardHeader>
             <CardContent>
               {aiLoading ? (
@@ -185,17 +361,42 @@ export default function DashboardPage() {
                   </div>
                   
                   {aiInsights.alerts && aiInsights.alerts.length > 0 && (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       <h4 className="text-sm font-semibold flex items-center text-red-600">
                         <AlertTriangle className="mr-1 h-4 w-4" />
                         Urgent Alerts
                       </h4>
-                      {aiInsights.alerts.slice(0, 2).map((alert: string, index: number) => (
-                        <div key={index} className="flex items-start space-x-2">
-                          <div className="w-2 h-2 bg-red-500 rounded-full mt-2 flex-shrink-0"></div>
-                          <span className="text-sm text-red-700">{alert}</span>
-                        </div>
-                      ))}
+                      {aiInsights.alerts.slice(0, 2).map((alert: string, index: number) => {
+                        const actionType = getDashboardActionType(alert)
+                        const isExecuting = executingAction === alert
+                        
+                        return (
+                          <div key={index} className="p-3 border border-red-300 rounded-lg bg-red-100/50">
+                            <div className="flex items-start justify-between space-x-3">
+                              <div className="flex items-start space-x-2 flex-1">
+                                <div className="w-2 h-2 bg-red-500 rounded-full mt-2 flex-shrink-0"></div>
+                                <span className="text-sm text-red-700 flex-1">{alert}</span>
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={isExecuting}
+                                onClick={() => executeRecommendationAction(alert, actionType)}
+                                className="ml-2 shrink-0 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white border-none"
+                              >
+                                {isExecuting ? (
+                                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white mr-1" />
+                                ) : (
+                                  getDashboardActionButtonIcon(actionType)
+                                )}
+                                <span className="ml-1 text-xs">
+                                  {isExecuting ? 'Acting...' : getDashboardActionButtonText(actionType)}
+                                </span>
+                              </Button>
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
 
@@ -240,18 +441,43 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               {aiInsights?.priorityActions ? (
-                <div className="space-y-3">
-                  {aiInsights.priorityActions.slice(0, 4).map((action: string, index: number) => (
-                    <div key={index} className="flex items-start space-x-3">
-                      <Badge variant="outline" className="text-xs">
-                        {index + 1}
-                      </Badge>
-                      <span className="text-sm flex-1">{action}</span>
-                    </div>
-                  ))}
+                <div className="space-y-4">
+                  {aiInsights.priorityActions.slice(0, 4).map((action: string, index: number) => {
+                    const actionType = getDashboardActionType(action)
+                    const isExecuting = executingAction === action
+                    
+                    return (
+                      <div key={index} className="p-3 border border-red-200 rounded-lg bg-red-50/50">
+                        <div className="flex items-start justify-between space-x-3">
+                          <div className="flex items-start space-x-3 flex-1">
+                            <Badge variant="outline" className="text-xs mt-0.5 bg-red-100 text-red-700 border-red-300">
+                              {index + 1}
+                            </Badge>
+                            <span className="text-sm flex-1 text-red-800">{action}</span>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={isExecuting}
+                            onClick={() => executeRecommendationAction(action, actionType)}
+                            className="ml-2 shrink-0 bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-white border-none"
+                          >
+                            {isExecuting ? (
+                              <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white mr-1" />
+                            ) : (
+                              getDashboardActionButtonIcon(actionType)
+                            )}
+                            <span className="ml-1 text-xs">
+                              {isExecuting ? 'Acting...' : getDashboardActionButtonText(actionType)}
+                            </span>
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  })}
                   {aiInsights.priorityActions.length > 4 && (
-                    <p className="text-xs text-muted-foreground">
-                      +{aiInsights.priorityActions.length - 4} more actions
+                    <p className="text-xs text-muted-foreground text-center">
+                      +{aiInsights.priorityActions.length - 4} more priority actions available
                     </p>
                   )}
                 </div>
@@ -259,7 +485,7 @@ export default function DashboardPage() {
                 <div className="text-center py-6">
                   <Lightbulb className="mx-auto h-8 w-8 text-muted-foreground" />
                   <p className="mt-2 text-xs text-muted-foreground">
-                    No recommendations available
+                    No priority actions available
                   </p>
                 </div>
               )}
