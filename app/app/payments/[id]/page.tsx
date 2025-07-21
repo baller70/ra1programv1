@@ -33,6 +33,7 @@ import {
 } from 'lucide-react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../../../components/ui/collapsible'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select'
+import { AppLayout } from '../../../components/app-layout'
 
 interface Payment {
   id: string
@@ -290,6 +291,7 @@ export default function PaymentDetailPage() {
       installments: null
     }
   ]
+
   useEffect(() => {
     fetchPaymentDetails()
     fetchPaymentHistory()
@@ -393,6 +395,7 @@ export default function PaymentDetailPage() {
         description: 'Failed to mark payment as paid due to an unexpected error.',
         variant: 'destructive',
       })
+    } finally {
     }
   }
 
@@ -541,8 +544,8 @@ export default function PaymentDetailPage() {
       });
     } finally {
       setLoadingStripe(false);
-
-  }
+    }
+  };
   // Handle Payment Option Processing
   const handlePaymentProcess = async () => {
     if (!selectedPaymentOption || !payment?.parent?.id) {
@@ -592,9 +595,49 @@ export default function PaymentDetailPage() {
     } finally {
       setProcessingPayment(false)
     }
-  }
-    }
   };
+
+  if (loading) {
+    return (
+      <AppLayout>
+        <div className="container mx-auto py-6">
+          <div className="flex items-center justify-center min-h-[400px]">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600"></div>
+          </div>
+        </div>
+      </AppLayout>
+    )
+  }
+
+  if (error || !payment) {
+    return (
+      <AppLayout>
+        <div className="container mx-auto py-6">
+          <div className="flex items-center justify-center min-h-[400px]">
+            <Card className="w-full max-w-md">
+              <CardContent className="text-center py-8">
+                <AlertTriangle className="h-12 w-12 mx-auto text-red-500 mb-4" />
+                <h2 className="text-xl font-semibold mb-2">Payment Not Found</h2>
+                <p className="text-muted-foreground mb-4">
+                  {error || 'The payment you are looking for does not exist.'}
+                </p>
+                <Button asChild>
+                  <Link href="/payments">
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Back to Payments
+                  </Link>
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </AppLayout>
+    )
+  }
+
+  const daysOverdue = payment.status === 'overdue'
+    ? Math.floor((new Date().getTime() - new Date(payment.dueDate).getTime()) / (1000 * 60 * 60 * 24))
+    : 0
 
   const handleSubscriptionCreate = async () => {
     if (!payment?.parent?.id) return;
@@ -617,7 +660,6 @@ export default function PaymentDetailPage() {
             title: 'Subscription Created',
             description: 'Subscription has been created successfully.',
           });
-          // Refresh the page data
           window.location.reload();
         }
       } else {
@@ -648,18 +690,18 @@ export default function PaymentDetailPage() {
         } else {
           toast({
             title: 'Error opening Stripe Portal',
-            description: data.message || 'Failed to open Stripe portal.',
+            description: 'Unable to open customer portal.',
             variant: 'destructive',
           });
         }
       } else {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to open Stripe portal.');
+        throw new Error(errorData.error || 'Failed to open customer portal.');
       }
     } catch (error) {
-      console.error('Error managing subscription:', error);
+      console.error('Error opening customer portal:', error);
       toast({
-        title: 'Error managing subscription',
+        title: 'Error opening customer portal',
         description: error instanceof Error ? error.message : 'An unexpected error occurred.',
         variant: 'destructive',
       });
@@ -669,32 +711,31 @@ export default function PaymentDetailPage() {
   };
 
   const handleSubscriptionCancel = async () => {
-    if (!payment?.parent?.stripeCustomer?.subscriptions?.[0]?.stripeSubscriptionId) return;
+    if (!payment?.parent?.id) return;
     setLoadingStripe(true);
     try {
       const response = await fetch(`/api/stripe/subscriptions`, {
-        method: 'PATCH',
+        method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          subscriptionId: payment.parent.stripeCustomer.subscriptions[0].stripeSubscriptionId,
+          parentId: payment.parent.id,
           action: 'cancel'
         })
       });
       if (response.ok) {
         toast({
-          title: 'Subscription Canceled',
-          description: 'Subscription will be canceled at the end of the current period.',
+          title: 'Subscription Cancelled',
+          description: 'Subscription has been cancelled successfully.',
         });
-        // Refresh the page data
         window.location.reload();
       } else {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to cancel subscription.');
       }
     } catch (error) {
-      console.error('Error canceling subscription:', error);
+      console.error('Error cancelling subscription:', error);
       toast({
-        title: 'Error canceling subscription',
+        title: 'Error cancelling subscription',
         description: error instanceof Error ? error.message : 'An unexpected error occurred.',
         variant: 'destructive',
       });
@@ -703,46 +744,9 @@ export default function PaymentDetailPage() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="container mx-auto py-6">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600"></div>
-        </div>
-      </div>
-    )
-  }
-
-  if (error || !payment) {
-    return (
-      <div className="container mx-auto py-6">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <Card className="w-full max-w-md">
-            <CardContent className="text-center py-8">
-              <AlertTriangle className="h-12 w-12 mx-auto text-red-500 mb-4" />
-              <h2 className="text-xl font-semibold mb-2">Payment Not Found</h2>
-              <p className="text-muted-foreground mb-4">
-                {error || 'The payment you are looking for does not exist.'}
-              </p>
-              <Button asChild>
-                <Link href="/payments">
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Back to Payments
-                </Link>
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    )
-  }
-
-  const daysOverdue = payment.status === 'overdue' 
-    ? Math.floor((new Date().getTime() - new Date(payment.dueDate).getTime()) / (1000 * 60 * 60 * 24))
-    : 0
-
   return (
-    <div className="container mx-auto py-6 space-y-6">
+    <AppLayout>
+      <div className="container mx-auto py-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
@@ -1515,5 +1519,6 @@ export default function PaymentDetailPage() {
         </div>
       </div>
     </div>
+  </AppLayout>
   )
 }

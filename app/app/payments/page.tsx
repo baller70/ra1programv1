@@ -603,166 +603,166 @@ export default function PaymentsPage() {
                   {program.name} - Payment Dashboard
                 </div>
 
-        {/* Analytics Cards */}
-        <div className="grid gap-4 md:grid-cols-6">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">${analytics?.stats.totalRevenue?.toLocaleString() || summary.total.toLocaleString()}</div>
-              <p className="text-xs text-muted-foreground">
-                <TrendingUp className="h-3 w-3 inline mr-1" />
-                All time
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Collected</CardTitle>
-              <CheckCircle className="h-4 w-4 text-green-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">${analytics?.stats.totalPaid?.toLocaleString() || summary.paid.toLocaleString()}</div>
-              <p className="text-xs text-muted-foreground">
-                {analytics?.stats.paymentSuccessRate?.toFixed(1) || '0'}% success rate
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Pending</CardTitle>
-              <Clock className="h-4 w-4 text-orange-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-orange-600">${analytics?.stats.totalPending?.toLocaleString() || summary.pending.toLocaleString()}</div>
-              <p className="text-xs text-muted-foreground">
-                Awaiting payment
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Overdue</CardTitle>
-              <AlertTriangle className="h-4 w-4 text-red-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">${analytics?.stats.totalOverdue?.toLocaleString() || summary.overdue.toLocaleString()}</div>
-              <p className="text-xs text-muted-foreground">
-                {analytics?.overdueAnalysis.averageDaysOverdue?.toFixed(0) || 0} avg days late
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Avg Payment Time</CardTitle>
-              <Clock className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{analytics?.stats.averagePaymentTime?.toFixed(0) || 0}</div>
-              <p className="text-xs text-muted-foreground">days after due</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active Plans</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{payments.filter(p => p.paymentPlan).length}</div>
-              <p className="text-xs text-muted-foreground">payment plans</p>
-            </CardContent>
-          </Card>
-        </div>
+                {/* Analytics Cards */}
+                <div className="grid gap-4 md:grid-cols-6">
+                          <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+                      <DollarSign className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">${analytics?.stats.totalRevenue?.toLocaleString() || summary.total.toLocaleString()}</div>
+                      <p className="text-xs text-muted-foreground">
+                        <TrendingUp className="h-3 w-3 inline mr-1" />
+                        All time
+                      </p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Collected</CardTitle>
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold text-green-600">${analytics?.stats.totalPaid?.toLocaleString() || summary.paid.toLocaleString()}</div>
+                      <p className="text-xs text-muted-foreground">
+                        {analytics?.stats.paymentSuccessRate?.toFixed(1) || '0'}% success rate
+                      </p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Pending</CardTitle>
+                      <Clock className="h-4 w-4 text-orange-600" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold text-orange-600">${analytics?.stats.totalPending?.toLocaleString() || summary.pending.toLocaleString()}</div>
+                      <p className="text-xs text-muted-foreground">
+                        Awaiting payment
+                      </p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Overdue</CardTitle>
+                      <AlertTriangle className="h-4 w-4 text-red-600" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold text-red-600">${analytics?.stats.totalOverdue?.toLocaleString() || summary.overdue.toLocaleString()}</div>
+                      <p className="text-xs text-muted-foreground">
+                        {analytics?.overdueAnalysis.averageDaysOverdue?.toFixed(0) || 0} avg days late
+                      </p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Avg Payment Time</CardTitle>
+                      <Clock className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{analytics?.stats.averagePaymentTime?.toFixed(0) || 0}</div>
+                      <p className="text-xs text-muted-foreground">days after due</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Active Plans</CardTitle>
+                      <Users className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{payments.filter(p => p.paymentPlan).length}</div>
+                      <p className="text-xs text-muted-foreground">payment plans</p>
+                    </CardContent>
+                  </Card>
+                </div>
 
-        {/* AI Payment Insights Section */}
-        <div className="relative">
-          <div className="absolute -top-2 left-4 z-10">
-            <Badge className="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-3 py-1 shadow-md">
-              <Brain className="mr-1 h-3 w-3" />
-              AI Insights
-            </Badge>
-          </div>
-          <Card className="border-purple-200 bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-50 shadow-lg">
-            <CardHeader className="pb-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-xl font-bold flex items-center text-purple-800">
-                    <Brain className="mr-2 h-6 w-6 text-purple-600" />
-                    AI Payment Intelligence
-                  </CardTitle>
-                  <p className="text-sm text-purple-600 mt-1">Predictive insights and smart recommendations</p>
-                </div>
-                <Button
-                  onClick={fetchAIPaymentInsights}
-                  disabled={aiLoading}
-                  className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white"
-                  size="sm"
-                >
-                  {aiLoading ? (
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-                  ) : (
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                  )}
-                  {aiLoading ? 'Analyzing...' : 'Generate AI Insights'}
-                </Button>
-              </div>
-            </CardHeader>
+                {/* AI Payment Insights Section */}
+                <div className="relative">
+                  <div className="absolute -top-2 left-4 z-10">
+                    <Badge className="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-3 py-1 shadow-md">
+                      <Brain className="mr-1 h-3 w-3" />
+                      AI Insights
+                    </Badge>
+                  </div>
+                  <Card className="border-purple-200 bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-50 shadow-lg">
+                    <CardHeader className="pb-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle className="text-xl font-bold flex items-center text-purple-800">
+                            <Brain className="mr-2 h-6 w-6 text-purple-600" />
+                            AI Payment Intelligence
+                          </CardTitle>
+                          <p className="text-sm text-purple-600 mt-1">Predictive insights and smart recommendations</p>
+                        </div>
+                        <Button
+                          onClick={fetchAIPaymentInsights}
+                          disabled={aiLoading}
+                          className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white"
+                          size="sm"
+                        >
+                          {aiLoading ? (
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                          ) : (
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                          )}
+                          {aiLoading ? 'Analyzing...' : 'Generate AI Insights'}
+                        </Button>
+                      </div>
+                    </CardHeader>
             <CardContent>
-              {aiLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600"></div>
-                  <span className="ml-2 text-sm text-muted-foreground">AI analyzing payment patterns...</span>
-                </div>
-              ) : aiInsights ? (
-                <div className="grid gap-4 md:grid-cols-3">
-                  <div className="space-y-3">
-                    <h4 className="font-semibold flex items-center text-blue-700">
-                      <TrendingUp className="mr-1 h-4 w-4" />
-                      Payment Predictions
-                    </h4>
-                    {aiInsights.predictions?.slice(0, 3).map((prediction: string, index: number) => (
-                      <div key={index} className="flex items-start space-x-2">
-                        <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
-                        <span className="text-sm">{prediction}</span>
-                      </div>
-                    ))}
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <h4 className="font-semibold flex items-center text-orange-700">
-                      <AlertTriangle className="mr-1 h-4 w-4" />
-                      Risk Alerts
-                    </h4>
-                    {aiInsights.risks?.slice(0, 3).map((risk: string, index: number) => (
-                      <div key={index} className="flex items-start space-x-2">
-                        <div className="w-2 h-2 bg-orange-500 rounded-full mt-2 flex-shrink-0"></div>
-                        <span className="text-sm">{risk}</span>
-                      </div>
-                    ))}
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <h4 className="font-semibold flex items-center text-green-700">
-                      <Target className="mr-1 h-4 w-4" />
-                      Optimization Tips
-                    </h4>
-                    {aiInsights.optimizations?.slice(0, 3).map((tip: string, index: number) => (
-                      <div key={index} className="flex items-start space-x-2">
-                        <div className="w-2 h-2 bg-green-500 rounded-full mt-2 flex-shrink-0"></div>
-                        <span className="text-sm">{tip}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <Brain className="mx-auto h-12 w-12 text-muted-foreground" />
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Click "Generate AI Insights" to get payment intelligence
-                  </p>
-                  <div className="grid grid-cols-3 gap-4 mt-6">
+                      {aiLoading ? (
+                        <div className="flex items-center justify-center py-8">
+                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600"></div>
+                          <span className="ml-2 text-sm text-muted-foreground">AI analyzing payment patterns...</span>
+                        </div>
+                      ) : aiInsights ? (
+                        <div className="grid gap-4 md:grid-cols-3">
+                          <div className="space-y-3">
+                            <h4 className="font-semibold flex items-center text-blue-700">
+                              <TrendingUp className="mr-1 h-4 w-4" />
+                              Payment Predictions
+                            </h4>
+                            {aiInsights.predictions?.slice(0, 3).map((prediction: string, index: number) => (
+                              <div key={index} className="flex items-start space-x-2">
+                                <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
+                                <span className="text-sm">{prediction}</span>
+                              </div>
+                            ))}
+                          </div>
+                          
+                          <div className="space-y-3">
+                            <h4 className="font-semibold flex items-center text-orange-700">
+                              <AlertTriangle className="mr-1 h-4 w-4" />
+                              Risk Alerts
+                            </h4>
+                            {aiInsights.risks?.slice(0, 3).map((risk: string, index: number) => (
+                              <div key={index} className="flex items-start space-x-2">
+                                <div className="w-2 h-2 bg-orange-500 rounded-full mt-2 flex-shrink-0"></div>
+                                <span className="text-sm">{risk}</span>
+                              </div>
+                            ))}
+                          </div>
+                          
+                          <div className="space-y-3">
+                            <h4 className="font-semibold flex items-center text-green-700">
+                              <Target className="mr-1 h-4 w-4" />
+                              Optimization Tips
+                            </h4>
+                            {aiInsights.optimizations?.slice(0, 3).map((tip: string, index: number) => (
+                              <div key={index} className="flex items-start space-x-2">
+                                <div className="w-2 h-2 bg-green-500 rounded-full mt-2 flex-shrink-0"></div>
+                                <span className="text-sm">{tip}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-center py-8">
+                          <Brain className="mx-auto h-12 w-12 text-muted-foreground" />
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            Click "Generate AI Insights" to get payment intelligence
+                          </p>
+                          <div className="grid grid-cols-3 gap-4 mt-6">
                     <div className="text-center p-4 border border-purple-200 rounded-lg bg-white/50">
                       <TrendingUp className="h-8 w-8 mb-2 mx-auto text-purple-600" />
                       <h4 className="font-medium text-sm mb-1">Payment Predictions</h4>
@@ -987,50 +987,50 @@ export default function PaymentsPage() {
                     </div>
                   </DialogContent>
                 </Dialog>
-                
-                {teams.length > 0 && (
-                  <div className="flex items-center space-x-1">
-                    {teams.slice(0, 3).map((team) => (
-                      <div
-                        key={team.id}
-                        className="flex items-center space-x-1 text-xs bg-muted px-2 py-1 rounded"
-                      >
-                        <div
-                          className="w-3 h-3 rounded-full"
-                          style={{ backgroundColor: team.color || '#f97316' }}
-                        />
-                        <span>{team.name}</span>
-                        <span className="text-muted-foreground">({team._count.parents})</span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-4 w-4 p-0 ml-1"
-                          onClick={() => handleEditTeam(team)}
-                        >
-                          <Edit className="h-3 w-3" />
-                        </Button>
+                        
+                        {teams.length > 0 && (
+                          <div className="flex items-center space-x-1">
+                            {teams.slice(0, 3).map((team) => (
+                              <div
+                                key={team.id}
+                                className="flex items-center space-x-1 text-xs bg-muted px-2 py-1 rounded"
+                              >
+                                <div
+                                  className="w-3 h-3 rounded-full"
+                                  style={{ backgroundColor: team.color || '#f97316' }}
+                                />
+                                <span>{team.name}</span>
+                                <span className="text-muted-foreground">({team._count.parents})</span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-4 w-4 p-0 ml-1"
+                                  onClick={() => handleEditTeam(team)}
+                                >
+                                  <Edit className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ))}
+                            {teams.length > 3 && (
+                              <span className="text-xs text-muted-foreground">+{teams.length - 3} more</span>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    ))}
-                    {teams.length > 3 && (
-                      <span className="text-xs text-muted-foreground">+{teams.length - 3} more</span>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+                    </div>
+                  </CardContent>
+                </Card>
 
-        {/* Payments Table */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Latest Payments by Parent</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Showing the most recent payment for each parent. Click "View Details & History" to see all payments for a parent.
-            </p>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
+                {/* Payments Table */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Latest Payments by Parent</CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      Showing the most recent payment for each parent. Click "View Details & History" to see all payments for a parent.
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
               {Object.entries(groupedPayments).map(([groupName, groupPayments]) => {
                 const team = teams.find(t => t.name === groupName)
                 const isUnassigned = groupName === 'Unassigned'
