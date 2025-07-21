@@ -1,0 +1,12 @@
+[
+  {
+    "name": "John Doe",
+    "email": "john@doe.com",
+    "emailVerified": null,
+    "image": null,
+    "password": "$2a$12$v6rhS6XIGHwDYg7.SDQoLefh5JXwn5jkVDBoxyE9aA8CVNtpheQDS",
+    "role": "admin",
+    "createdAt": 1752960471073,
+    "updatedAt": 1752960471073
+  }
+]

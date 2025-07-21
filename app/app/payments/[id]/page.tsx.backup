@@ -32,7 +32,6 @@ import {
   Plus
 } from 'lucide-react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../../../components/ui/collapsible'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select'
 
 interface Payment {
   id: string
@@ -211,85 +210,11 @@ export default function PaymentDetailPage() {
   const [sendingReminder, setSendingReminder] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loadingStripe, setLoadingStripe] = useState(false);
-  const [selectedPaymentOption, setSelectedPaymentOption] = useState<string>("")
-  const [processingPayment, setProcessingPayment] = useState(false)
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>("")
-  const [selectedPaymentSchedule, setSelectedPaymentSchedule] = useState<string>("")
-  const [showPaymentDetails, setShowPaymentDetails] = useState(false)
-  const [customInstallments, setCustomInstallments] = useState<number>(1)
-  const [checkDetails, setCheckDetails] = useState({ checkNumbers: "", startDate: "" })
-  const [cashDetails, setCashDetails] = useState({ receiptNumber: "", paidDate: "" })
 
   // Collapsible state
   const [isPaymentHistoryOpen, setIsPaymentHistoryOpen] = useState(false)
   const [isCommunicationHistoryOpen, setIsCommunicationHistoryOpen] = useState(true)
 
-
-  // Payment Methods Configuration
-  const paymentMethods = [
-    {
-      id: "stripe",
-      name: "💳 Stripe Online Payment",
-      description: "Credit/Debit card payment",
-      icon: "CreditCard",
-      isOnline: true
-    },
-    {
-      id: "checks",
-      name: "📝 Pre-dated Checks",
-      description: "Physical check payments",
-      icon: "FileText",
-      isOnline: false
-    },
-    {
-      id: "cash",
-      name: "💵 Cash Payment",
-      description: "Cash payment tracking",
-      icon: "DollarSign",
-      isOnline: false
-    }
-  ]
-
-  const paymentSchedules = [
-    {
-      id: "full",
-      name: "Full Payment",
-      amount: 169959,
-      displayAmount: "$1,699.59",
-      description: "Complete program payment",
-      installments: 1,
-      stripeProductId: "prod_Sii6yM3G79NEP0",
-      stripePriceId: "price_1RnGg3IzIyImaBG0CdkV5VbB"
-    },
-    {
-      id: "monthly",
-      name: "Monthly Plan",
-      amount: 18877,
-      displayAmount: "$188.77",
-      description: "9 monthly payments",
-      installments: 9,
-      stripeProductId: "prod_Sii6SVyt12xJR9",
-      stripePriceId: "price_1RnGgCIzIyImaBG0a8Itn7eI"
-    },
-    {
-      id: "quarterly",
-      name: "Quarterly Plan",
-      amount: 56674,
-      displayAmount: "$566.74",
-      description: "3 quarterly payments",
-      installments: 3,
-      stripeProductId: "prod_Sii6NzRocXynsU",
-      stripePriceId: "price_1RnGgCIzIyImaBG0HtVgcpgl"
-    },
-    {
-      id: "custom",
-      name: "Custom Schedule",
-      amount: null,
-      displayAmount: "Custom",
-      description: "Custom payment schedule",
-      installments: null
-    }
-  ]
   useEffect(() => {
     fetchPaymentDetails()
     fetchPaymentHistory()
@@ -541,57 +466,6 @@ export default function PaymentDetailPage() {
       });
     } finally {
       setLoadingStripe(false);
-
-  // Handle Payment Option Processing
-  const handlePaymentProcess = async () => {
-    if (!selectedPaymentOption || !payment?.parent?.id) {
-      toast({
-        title: "Error",
-        description: "Please select a payment option",
-        variant: "destructive"
-      })
-      return
-    }
-
-    const option = paymentOptions.find(opt => opt.id === selectedPaymentOption)
-    if (!option) return
-
-    setProcessingPayment(true)
-    try {
-      // Create Stripe checkout session or payment link
-      const response = await fetch(`/api/stripe/create-payment`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          parentId: payment.parent.id,
-          paymentId: payment.id,
-          priceId: option.stripePriceId,
-          paymentType: option.type,
-          mode: option.type === "one_time" ? "payment" : "subscription"
-        })
-      })
-
-      if (response.ok) {
-        const { url } = await response.json()
-        // Open payment URL in new tab for both admin and user
-        window.open(url, "_blank")
-        toast({
-          title: "Payment Initiated",
-          description: `${option.name} payment process started`,
-        })
-      } else {
-        throw new Error("Failed to create payment")
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to process payment",
-        variant: "destructive"
-      })
-    } finally {
-      setProcessingPayment(false)
-    }
-  }
     }
   };
 
@@ -1266,65 +1140,6 @@ export default function PaymentDetailPage() {
                     )}
                   </div>
 
-
-                  {/* Payment Options Section */}
-                  <div className="border rounded-lg p-3 bg-muted/50">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="text-sm font-medium flex items-center gap-2">
-                        <DollarSign className="h-4 w-4" />
-                        Payment Options
-                      </h4>
-                      <Badge variant="outline" className="text-xs">
-                        {payment.parent?.stripeCustomer ? "Ready" : "Setup Needed"}
-                      </Badge>
-                    </div>
-                    
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                          Select Payment Plan
-                        </label>
-                        <Select
-                          value={selectedPaymentOption}
-                          onValueChange={setSelectedPaymentOption}
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Choose payment option..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {paymentOptions.map((option) => (
-                              <SelectItem key={option.id} value={option.id}>
-                                <div className="flex flex-col">
-                                  <div className="flex items-center justify-between w-full">
-                                    <span className="font-medium">{option.name}</span>
-                                    <span className="text-green-600 font-bold ml-2">{option.displayPrice}</span>
-                                  </div>
-                                  <span className="text-xs text-muted-foreground text-left">
-                                    {option.description}
-                                  </span>
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      
-                      <Button
-                        onClick={handlePaymentProcess}
-                        disabled={!selectedPaymentOption || processingPayment || !payment.parent?.stripeCustomer}
-                        className="w-full"
-                      >
-                        <CreditCard className="mr-2 h-4 w-4" />
-                        {processingPayment ? "Processing..." : "Process Payment"}
-                      </Button>
-                      
-                      {!payment.parent?.stripeCustomer && (
-                        <p className="text-xs text-muted-foreground text-center">
-                          Complete Stripe setup first to process payments
-                        </p>
-                      )}
-                    </div>
-                  </div>
                   {/* Contract Section */}
               <div className="border rounded-lg p-3 bg-muted/50">
                 <div className="flex items-center justify-between mb-2">

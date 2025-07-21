@@ -22,3 +22,4 @@ yarn-debug.log*
 yarn-error.log*
 app/.env
 app/.env.backup
+app/.env
