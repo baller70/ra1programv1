@@ -542,6 +542,7 @@ export default function PaymentDetailPage() {
     } finally {
       setLoadingStripe(false);
 
+  }
   // Handle Payment Option Processing
   const handlePaymentProcess = async () => {
     if (!selectedPaymentOption || !payment?.parent?.id) {
@@ -553,7 +554,7 @@ export default function PaymentDetailPage() {
       return
     }
 
-    const option = paymentOptions.find(opt => opt.id === selectedPaymentOption)
+    const option = paymentSchedules.find(opt => opt.id === selectedPaymentOption)
     if (!option) return
 
     setProcessingPayment(true)
@@ -1292,7 +1293,7 @@ export default function PaymentDetailPage() {
                             <SelectValue placeholder="Choose payment option..." />
                           </SelectTrigger>
                           <SelectContent>
-                            {paymentOptions.map((option) => (
+                            {paymentSchedules.map((option) => (
                               <SelectItem key={option.id} value={option.id}>
                                 <div className="flex flex-col">
                                   <div className="flex items-center justify-between w-full">
@@ -1515,4 +1516,4 @@ export default function PaymentDetailPage() {
       </div>
     </div>
   )
-} 
+}
