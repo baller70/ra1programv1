@@ -1,0 +1,256 @@
+yarn run v1.22.22
+$ next dev
+  ▲ Next.js 14.2.28
+  - Local:        http://localhost:3000
+  - Environments: .env.local, .env
+  - Experiments (use with caution):
+    · outputFileTracingRoot
+
+ ✓ Starting...
+ ✓ Ready in 3.9s
+ ✓ Compiled /middleware in 254ms (72 modules)
+ ○ Compiling /payments ...
+(node:48257) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ Compiled /payments in 5.3s (2235 modules)
+🔍 Payments Debug: {
+  paymentsData: undefined,
+  analytics: undefined,
+  teamsData: undefined,
+  payments: 0,
+  teams: 0
+}
+ GET /payments 200 in 5789ms
+ ✓ Compiled in 539ms (1121 modules)
+🔍 Payments Debug: {
+  paymentsData: undefined,
+  analytics: undefined,
+  teamsData: undefined,
+  payments: 0,
+  teams: 0
+}
+ GET /payments 200 in 82ms
+ ○ Compiling / ...
+ ✓ Compiled / in 1231ms (2242 modules)
+ ○ Compiling /api/dashboard/revenue-trends ...
+ ✓ Compiled /api/dashboard/revenue-trends in 576ms (1188 modules)
+ ✓ Compiled (1192 modules)
+ GET /api/dashboard/stats 200 in 1031ms
+ GET /api/dashboard/revenue-trends 200 in 1063ms
+ GET /api/dashboard/recent-activity 200 in 1067ms
+ GET /api/dashboard/stats 200 in 16ms
+ GET /api/dashboard/recent-activity 200 in 40ms
+ GET /api/dashboard/revenue-trends 200 in 44ms
+ ✓ Compiled /api/ai/dashboard-insights in 133ms (1194 modules)
+ GET /api/ai/dashboard-insights 200 in 209ms
+ GET /api/ai/dashboard-insights 200 in 16ms
+ ✓ Compiled in 1113ms (2256 modules)
+ ✓ Compiled in 853ms (2256 modules)
+ ○ Compiling /api/dashboard/recent-activity ...
+ ✓ Compiled /api/dashboard/recent-activity in 764ms (1188 modules)
+ ✓ Compiled (1192 modules)
+ GET /api/dashboard/stats 200 in 1150ms
+ GET /api/dashboard/revenue-trends 200 in 1160ms
+ GET /api/dashboard/recent-activity 200 in 1162ms
+ GET /api/dashboard/stats 200 in 23ms
+ GET /api/dashboard/revenue-trends 200 in 30ms
+ GET /api/dashboard/recent-activity 200 in 22ms
+ ✓ Compiled in 682ms (2327 modules)
+ GET / 200 in 425ms
+ ✓ Compiled /api/ai/dashboard-insights in 294ms (1194 modules)
+ GET /api/ai/dashboard-insights 200 in 389ms
+ GET /api/ai/dashboard-insights 200 in 17ms
+ ⨯ ./app/page.tsx
+Error: 
+  [31mx[0m the name `loading` is defined multiple times
+    ,-[[36;1;4m/Volumes/Softwaare Program/RA1 Yearly V2*/ra1programv1/app/app/page.tsx[0m:27:1]
+ [2m27[0m |   const [stats, setStats] = useState<DashboardStats | null>(null)
+ [2m28[0m |   const [revenueTrends, setRevenueTrends] = useState<PaymentTrend[]>([])
+ [2m29[0m |   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([])
+ [2m30[0m |   const [loading, setLoading] = useState(true)
+    : [31;1m         ^^^|^^^[0m
+    :             [31;1m`-- [31;1mprevious definition of `loading` here[0m[0m
+ [2m31[0m |   
+ [2m32[0m |   const [aiInsights, setAiInsights] = useState<any>(null)
+ [2m33[0m |   const [loading, setLoading] = useState(false) // Convex handles loading states
+    : [33;1m         ^^^|^^^[0m
+    :             [33;1m`-- [33;1m`loading` redefined here[0m[0m
+ [2m34[0m |   const [aiLoading, setAiLoading] = useState(false)
+ [2m35[0m |   const [executingAction, setExecutingAction] = useState<string | null>(null)
+ [2m36[0m |   const { toast } = useToast()
+    `----
+
+  [31mx[0m the name `setLoading` is defined multiple times
+    ,-[[36;1;4m/Volumes/Softwaare Program/RA1 Yearly V2*/ra1programv1/app/app/page.tsx[0m:27:1]
+ [2m27[0m |   const [stats, setStats] = useState<DashboardStats | null>(null)
+ [2m28[0m |   const [revenueTrends, setRevenueTrends] = useState<PaymentTrend[]>([])
+ [2m29[0m |   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([])
+ [2m30[0m |   const [loading, setLoading] = useState(true)
+    : [31;1m                  ^^^^^|^^^^[0m
+    :                        [31;1m`-- [31;1mprevious definition of `setLoading` here[0m[0m
+ [2m31[0m |   
+ [2m32[0m |   const [aiInsights, setAiInsights] = useState<any>(null)
+ [2m33[0m |   const [loading, setLoading] = useState(false) // Convex handles loading states
+    : [33;1m                  ^^^^^|^^^^[0m
+    :                        [33;1m`-- [33;1m`setLoading` redefined here[0m[0m
+ [2m34[0m |   const [aiLoading, setAiLoading] = useState(false)
+ [2m35[0m |   const [executingAction, setExecutingAction] = useState<string | null>(null)
+ [2m36[0m |   const { toast } = useToast()
+    `----
+
+Import trace for requested module:
+./app/page.tsx
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⨯ ./app/page.tsx
+Error: 
+  [31mx[0m the name `loading` is defined multiple times
+    ,-[[36;1;4m/Volumes/Softwaare Program/RA1 Yearly V2*/ra1programv1/app/app/page.tsx[0m:24:1]
+ [2m24[0m |   const [stats, setStats] = useState<DashboardStats | null>(null)
+ [2m25[0m |   const [revenueTrends, setRevenueTrends] = useState<PaymentTrend[]>([])
+ [2m26[0m |   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([])
+ [2m27[0m |   const [loading, setLoading] = useState(true)
+    : [31;1m         ^^^|^^^[0m
+    :             [31;1m`-- [31;1mprevious definition of `loading` here[0m[0m
+ [2m28[0m |   
+ [2m29[0m |   const [aiInsights, setAiInsights] = useState<any>(null)
+ [2m30[0m |   const [loading, setLoading] = useState(false) // Convex handles loading states
+    : [33;1m         ^^^|^^^[0m
+    :             [33;1m`-- [33;1m`loading` redefined here[0m[0m
+ [2m31[0m |   const [aiLoading, setAiLoading] = useState(false)
+ [2m32[0m |   const [executingAction, setExecutingAction] = useState<string | null>(null)
+ [2m33[0m |   const { toast } = useToast()
+    `----
+
+  [31mx[0m the name `setLoading` is defined multiple times
+    ,-[[36;1;4m/Volumes/Softwaare Program/RA1 Yearly V2*/ra1programv1/app/app/page.tsx[0m:24:1]
+ [2m24[0m |   const [stats, setStats] = useState<DashboardStats | null>(null)
+ [2m25[0m |   const [revenueTrends, setRevenueTrends] = useState<PaymentTrend[]>([])
+ [2m26[0m |   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([])
+ [2m27[0m |   const [loading, setLoading] = useState(true)
+    : [31;1m                  ^^^^^|^^^^[0m
+    :                        [31;1m`-- [31;1mprevious definition of `setLoading` here[0m[0m
+ [2m28[0m |   
+ [2m29[0m |   const [aiInsights, setAiInsights] = useState<any>(null)
+ [2m30[0m |   const [loading, setLoading] = useState(false) // Convex handles loading states
+    : [33;1m                  ^^^^^|^^^^[0m
+    :                        [33;1m`-- [33;1m`setLoading` redefined here[0m[0m
+ [2m31[0m |   const [aiLoading, setAiLoading] = useState(false)
+ [2m32[0m |   const [executingAction, setExecutingAction] = useState<string | null>(null)
+ [2m33[0m |   const { toast } = useToast()
+    `----
+
+Import trace for requested module:
+./app/page.tsx
+ ○ Compiling /_error ...
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⨯ ./app/page.tsx
+Error: 
+  [31mx[0m the name `loading` is defined multiple times
+    ,-[[36;1;4m/Volumes/Softwaare Program/RA1 Yearly V2*/ra1programv1/app/app/page.tsx[0m:24:1]
+ [2m24[0m |   const [stats, setStats] = useState<DashboardStats | null>(null)
+ [2m25[0m |   const [revenueTrends, setRevenueTrends] = useState<PaymentTrend[]>([])
+ [2m26[0m |   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([])
+ [2m27[0m |   const [loading, setLoading] = useState(true)
+    : [31;1m         ^^^|^^^[0m
+    :             [31;1m`-- [31;1mprevious definition of `loading` here[0m[0m
+ [2m28[0m |   
+ [2m29[0m |   const [aiInsights, setAiInsights] = useState<any>(null)
+ [2m30[0m |   const [loading, setLoading] = useState(false) // Convex handles loading states
+    : [33;1m         ^^^|^^^[0m
+    :             [33;1m`-- [33;1m`loading` redefined here[0m[0m
+ [2m31[0m |   const [aiLoading, setAiLoading] = useState(false)
+ [2m32[0m |   const [executingAction, setExecutingAction] = useState<string | null>(null)
+ [2m33[0m |   const { toast } = useToast()
+    `----
+
+  [31mx[0m the name `setLoading` is defined multiple times
+    ,-[[36;1;4m/Volumes/Softwaare Program/RA1 Yearly V2*/ra1programv1/app/app/page.tsx[0m:24:1]
+ [2m24[0m |   const [stats, setStats] = useState<DashboardStats | null>(null)
+ [2m25[0m |   const [revenueTrends, setRevenueTrends] = useState<PaymentTrend[]>([])
+ [2m26[0m |   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([])
+ [2m27[0m |   const [loading, setLoading] = useState(true)
+    : [31;1m                  ^^^^^|^^^^[0m
+    :                        [31;1m`-- [31;1mprevious definition of `setLoading` here[0m[0m
+ [2m28[0m |   
+ [2m29[0m |   const [aiInsights, setAiInsights] = useState<any>(null)
+ [2m30[0m |   const [loading, setLoading] = useState(false) // Convex handles loading states
+    : [33;1m                  ^^^^^|^^^^[0m
+    :                        [33;1m`-- [33;1m`setLoading` redefined here[0m[0m
+ [2m31[0m |   const [aiLoading, setAiLoading] = useState(false)
+ [2m32[0m |   const [executingAction, setExecutingAction] = useState<string | null>(null)
+ [2m33[0m |   const { toast } = useToast()
+    `----
+
+Import trace for requested module:
+./app/page.tsx
+ GET / 500 in 13112ms
+ ✓ Compiled /_not-found in 35.3s (2544 modules)
+ GET /_next/static/webpack/44fb3fce426cf97a.webpack.hot-update.json 404 in 31916ms
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ GET / 200 in 1848ms
+ GET / 200 in 202ms
+ GET /api/dashboard/stats 200 in 577ms
+ GET /api/dashboard/revenue-trends 200 in 680ms
+ GET /api/dashboard/recent-activity 200 in 683ms
+ GET /api/dashboard/stats 200 in 158ms
+ GET /api/dashboard/revenue-trends 200 in 407ms
+ GET /api/dashboard/recent-activity 200 in 415ms
+ GET /api/ai/dashboard-insights 200 in 138ms
+ GET /api/ai/dashboard-insights 200 in 44ms
+ ✓ Compiled in 5.2s (1323 modules)
+ ✓ Compiled in 901ms (1323 modules)
+ ✓ Compiled in 3.2s (1321 modules)
+ ✓ Compiled in 5.3s (1321 modules)
+ ✓ Compiled in 1492ms (1321 modules)
+ ✓ Compiled in 2.4s (1321 modules)
+🔍 Payments Debug: {
+  paymentsData: undefined,
+  analytics: undefined,
+  teamsData: undefined,
+  payments: 0,
+  teams: 0
+}
+ GET /payments 200 in 190ms
+   Reload env: .env.local
+ ✓ Compiled in 543ms (2541 modules)
+ ✓ Compiled in 1833ms (2483 modules)
+ ✓ Compiled /api/dashboard/recent-activity in 381ms (1228 modules)
+ ✓ Compiled (1232 modules)
+ GET /api/dashboard/stats 200 in 1100ms
+ GET /api/dashboard/revenue-trends 200 in 1034ms
+ GET /api/dashboard/recent-activity 200 in 1037ms
+ GET /api/dashboard/revenue-trends 200 in 77ms
+ GET /api/dashboard/stats 200 in 93ms
+ GET /api/dashboard/recent-activity 200 in 98ms
+ ✓ Compiled in 699ms (2553 modules)
+ GET / 200 in 375ms
+ ✓ Compiled in 1101ms (1321 modules)
+ ○ Compiling /analytics ...
+ ✓ Compiled /analytics in 8.7s (2559 modules)
+ GET /analytics 200 in 10278ms
+🔍 Payments Debug: {
+  paymentsData: undefined,
+  analytics: undefined,
+  teamsData: undefined,
+  payments: 0,
+  teams: 0
+}
+ GET /payments 200 in 177ms
+🔍 Payments Debug: {
+  paymentsData: undefined,
+  analytics: undefined,
+  teamsData: undefined,
+  payments: 0,
+  teams: 0
+}
+ GET /payments 200 in 58ms
+🔍 Payments Debug: {
+  paymentsData: undefined,
+  analytics: undefined,
+  teamsData: undefined,
+  payments: 0,
+  teams: 0
+}
+ GET /payments 200 in 241ms
+Done in 1905.02s.

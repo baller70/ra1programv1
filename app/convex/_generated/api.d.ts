@@ -13,6 +13,7 @@ import type {
   FilterApi,
   FunctionReference,
 } from "convex/server";
+import type * as dashboard from "../dashboard.js";
 import type * as migrations from "../migrations.js";
 import type * as parents from "../parents.js";
 import type * as payments from "../payments.js";
@@ -27,6 +28,7 @@ import type * as teams from "../teams.js";
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  dashboard: typeof dashboard;
   migrations: typeof migrations;
   parents: typeof parents;
   payments: typeof payments;
