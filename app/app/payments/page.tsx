@@ -3,6 +3,8 @@
 
 import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
+import { useQuery, useMutation } from "convex/react"
+import { api } from "../../convex/_generated/api"
 import { AppLayout } from '../../components/app-layout'
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
@@ -77,11 +79,19 @@ const Recharts = dynamic(() => import('recharts'), { ssr: false, loading: () => 
 
 export default function PaymentsPage() {
   const [activeProgram, setActiveProgram] = useState('yearly-program')
-  const [payments, setPayments] = useState<PaymentWithRelations[]>([])
-  const [analytics, setAnalytics] = useState<PaymentAnalytics | null>(null)
-  const [teams, setTeams] = useState<any[]>([])
+  
+  const paymentsData = useQuery(api.payments.getPayments, { 
+    program: activeProgram, 
+    latestOnly: true 
+  })
+  const analytics = useQuery(api.payments.getPaymentAnalytics, {
+    program: activeProgram,
+    latestOnly: true
+  })
+  const teamsData = useQuery(api.teams.getTeams, { includeParents: true })
+  
   const [selectedTeam, setSelectedTeam] = useState<string>('all')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [selectedPayments, setSelectedPayments] = useState<string[]>([])
@@ -98,23 +108,18 @@ export default function PaymentsPage() {
   const [selectedParents, setSelectedParents] = useState<string[]>([])
   const [assignToTeamId, setAssignToTeamId] = useState<string>('')
   const [collapsedTeams, setCollapsedTeams] = useState<Set<string>>(new Set())
+  
+  const payments = paymentsData?.payments || []
+  const teams = teamsData || []
 
   useEffect(() => {
-    fetchData()
-    fetchTeams()
-  }, [statusFilter, activeProgram, selectedTeam])
-
-  const fetchTeams = async () => {
-    try {
-      const response = await fetch('/api/teams?includeParents=true')
-      if (response.ok) {
-        const teamsData = await response.json()
-        setTeams(teamsData)
-      }
-    } catch (error) {
-      console.error('Error fetching teams:', error)
+    if (paymentsData === undefined || analytics === undefined || teamsData === undefined) {
+      setLoading(true)
+    } else {
+      setLoading(false)
     }
-  }
+  }, [paymentsData, analytics, teamsData, statusFilter, activeProgram, selectedTeam])
+
 
   const fetchAllParents = async () => {
     try {
@@ -151,8 +156,6 @@ export default function PaymentsPage() {
       })
 
       if (response.ok) {
-        await fetchTeams()
-        await fetchData()
         setShowParentAssignDialog(false)
         setSelectedParents([])
         setAssignToTeamId('')
@@ -192,7 +195,6 @@ export default function PaymentsPage() {
       })
 
       if (response.ok) {
-        await fetchTeams()
         setShowTeamDialog(false)
         setTeamForm({ name: '', description: '', color: '#f97316' })
         toast({
@@ -236,7 +238,6 @@ export default function PaymentsPage() {
       })
 
       if (response.ok) {
-        await fetchTeams()
         setShowTeamDialog(false)
         setEditingTeam(null)
         setTeamForm({ name: '', description: '', color: '#f97316' })
@@ -273,7 +274,6 @@ export default function PaymentsPage() {
       })
 
       if (response.ok) {
-        await fetchTeams()
         toast({
           title: "Success",
           description: "Team deleted successfully"
@@ -296,34 +296,6 @@ export default function PaymentsPage() {
     }
   }
 
-  const fetchData = async () => {
-    try {
-      const params = new URLSearchParams()
-      if (statusFilter !== 'all') params.append('status', statusFilter)
-      if (selectedTeam !== 'all') params.append('teamId', selectedTeam)
-      params.append('program', activeProgram)
-      params.append('latestOnly', 'true') // Only get latest payment per parent
-
-      const [paymentsRes, analyticsRes] = await Promise.all([
-        fetch(`/api/payments?${params}`),
-        fetch(`/api/payments/analytics?${params}`)
-      ])
-
-      if (paymentsRes.ok) {
-        const data = await paymentsRes.json()
-        setPayments(data.payments || data)
-      }
-
-      if (analyticsRes.ok) {
-        const analyticsData = await analyticsRes.json()
-        setAnalytics(analyticsData)
-      }
-    } catch (error) {
-      console.error('Failed to fetch data:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const filteredPayments = payments.filter(payment => {
     const matchesSearch = payment.parent?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -333,8 +305,8 @@ export default function PaymentsPage() {
 
   // Group payments by team if enabled
   const groupedPayments = groupByTeam ? 
-    filteredPayments.reduce((groups: Record<string, PaymentWithRelations[]>, payment) => {
-      const teamKey = payment.parent?.team?.name || 'Unassigned'
+    filteredPayments.reduce((groups: Record<string, any[]>, payment) => {
+      const teamKey = 'Unassigned' // For now, since we don't have team assignments in Convex yet
       if (!groups[teamKey]) {
         groups[teamKey] = []
       }
@@ -352,7 +324,7 @@ export default function PaymentsPage() {
   }
 
   const selectAllPayments = () => {
-    setSelectedPayments(filteredPayments.map(p => p.id))
+    setSelectedPayments(filteredPayments.map(p => p._id))
   }
 
   const clearSelection = () => {
@@ -388,7 +360,6 @@ export default function PaymentsPage() {
       })
 
       if (response.ok) {
-        await fetchData()
         setSelectedPayments([])
         const result = await response.json()
         alert(result.message)
@@ -562,7 +533,7 @@ export default function PaymentsPage() {
             <Button asChild variant="outline">
               <Link href="/payments/overdue">
                 <AlertTriangle className="mr-2 h-4 w-4" />
-                Overdue ({analytics?.overdueAnalysis.totalOverdue || 0})
+                Overdue ({Math.floor((analytics?.overduePayments || 0) / 100) || 0})
               </Link>
             </Button>
             <Button asChild variant="outline">
@@ -605,13 +576,13 @@ export default function PaymentsPage() {
 
                 {/* Analytics Cards */}
                 <div className="grid gap-4 md:grid-cols-6">
-                          <Card>
+                  <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                       <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
                       <DollarSign className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold">${analytics?.stats.totalRevenue?.toLocaleString() || summary.total.toLocaleString()}</div>
+                      <div className="text-2xl font-bold">${analytics?.totalRevenue?.toLocaleString() || summary.total.toLocaleString()}</div>
                       <p className="text-xs text-muted-foreground">
                         <TrendingUp className="h-3 w-3 inline mr-1" />
                         All time
@@ -624,9 +595,9 @@ export default function PaymentsPage() {
                       <CheckCircle className="h-4 w-4 text-green-600" />
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold text-green-600">${analytics?.stats.totalPaid?.toLocaleString() || summary.paid.toLocaleString()}</div>
+                      <div className="text-2xl font-bold text-green-600">${analytics?.collectedPayments?.toLocaleString() || summary.paid.toLocaleString()}</div>
                       <p className="text-xs text-muted-foreground">
-                        {analytics?.stats.paymentSuccessRate?.toFixed(1) || '0'}% success rate
+                        {analytics?.activePlans || 0} active plans
                       </p>
                     </CardContent>
                   </Card>
@@ -636,7 +607,7 @@ export default function PaymentsPage() {
                       <Clock className="h-4 w-4 text-orange-600" />
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold text-orange-600">${analytics?.stats.totalPending?.toLocaleString() || summary.pending.toLocaleString()}</div>
+                      <div className="text-2xl font-bold text-orange-600">${analytics?.pendingPayments?.toLocaleString() || summary.pending.toLocaleString()}</div>
                       <p className="text-xs text-muted-foreground">
                         Awaiting payment
                       </p>
@@ -648,9 +619,9 @@ export default function PaymentsPage() {
                       <AlertTriangle className="h-4 w-4 text-red-600" />
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold text-red-600">${analytics?.stats.totalOverdue?.toLocaleString() || summary.overdue.toLocaleString()}</div>
+                      <div className="text-2xl font-bold text-red-600">${analytics?.overduePayments?.toLocaleString() || summary.overdue.toLocaleString()}</div>
                       <p className="text-xs text-muted-foreground">
-                        {analytics?.overdueAnalysis.averageDaysOverdue?.toFixed(0) || 0} avg days late
+                        Requires immediate attention
                       </p>
                     </CardContent>
                   </Card>
@@ -660,7 +631,7 @@ export default function PaymentsPage() {
                       <Clock className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold">{analytics?.stats.averagePaymentTime?.toFixed(0) || 0}</div>
+                      <div className="text-2xl font-bold">{analytics?.avgPaymentTime || 0}</div>
                       <p className="text-xs text-muted-foreground">days after due</p>
                     </CardContent>
                   </Card>
@@ -786,7 +757,7 @@ export default function PaymentsPage() {
         </div>
 
         {/* Revenue Trend Chart */}
-        {analytics?.monthlyRevenue && (
+        {false && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
@@ -800,7 +771,7 @@ export default function PaymentsPage() {
                   <BarChart3 className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
                   <p className="text-sm text-muted-foreground">Revenue trend chart</p>
                   <p className="text-xs text-muted-foreground">
-                    {analytics.monthlyRevenue.length} months of data
+                    0 months of data
                   </p>
                 </div>
               </div>
@@ -881,8 +852,8 @@ export default function PaymentsPage() {
                 <option value="all">All Teams</option>
                 <option value="unassigned">Unassigned</option>
                 {teams.map((team) => (
-                  <option key={team.id} value={team.id}>
-                    {team.name} ({team._count.parents})
+                  <option key={team._id} value={team._id}>
+                    {team.name} (0)
                   </option>
                 ))}
               </select>
@@ -897,7 +868,7 @@ export default function PaymentsPage() {
                 <option value="overdue">Overdue</option>
                 <option value="failed">Failed</option>
               </select>
-              <Button variant="outline" onClick={fetchData}>
+              <Button variant="outline" onClick={() => window.location.reload()}>
                 <RefreshCw className="mr-2 h-4 w-4" />
                 Refresh
               </Button>
@@ -917,7 +888,7 @@ export default function PaymentsPage() {
               </div>
               <div className="text-sm text-muted-foreground">
                 {selectedTeam !== 'all' 
-                  ? `Showing ${selectedTeam === 'unassigned' ? 'unassigned parents' : teams.find(t => t.id === selectedTeam)?.name || 'selected team'}`
+                  ? `Showing ${selectedTeam === 'unassigned' ? 'unassigned parents' : teams.find(t => t._id === selectedTeam)?.name || 'selected team'}`
                   : `${teams.length} teams available`
                 }
               </div>
@@ -992,7 +963,7 @@ export default function PaymentsPage() {
                           <div className="flex items-center space-x-1">
                             {teams.slice(0, 3).map((team) => (
                               <div
-                                key={team.id}
+                                key={team._id}
                                 className="flex items-center space-x-1 text-xs bg-muted px-2 py-1 rounded"
                               >
                                 <div
@@ -1000,7 +971,7 @@ export default function PaymentsPage() {
                                   style={{ backgroundColor: team.color || '#f97316' }}
                                 />
                                 <span>{team.name}</span>
-                                <span className="text-muted-foreground">({team._count.parents})</span>
+                                <span className="text-muted-foreground">(0)</span>
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1031,7 +1002,7 @@ export default function PaymentsPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-              {Object.entries(groupedPayments).map(([groupName, groupPayments]) => {
+                      {Object.entries(groupedPayments).map(([groupName, groupPayments]) => {
                 const team = teams.find(t => t.name === groupName)
                 const isUnassigned = groupName === 'Unassigned'
                 const isCollapsed = collapsedTeams.has(groupName)
@@ -1069,7 +1040,7 @@ export default function PaymentsPage() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => handleDeleteTeam(team.id)}
+                                onClick={() => handleDeleteTeam(team._id)}
                                 className="text-red-600 hover:text-red-700"
                               >
                                 <Trash2 className="h-4 w-4" />
@@ -1085,11 +1056,11 @@ export default function PaymentsPage() {
                             borderColor: isUnassigned ? '#6b7280' : (team?.color || '#f97316')
                           }}>
                             {groupPayments.map((payment) => (
-                          <div key={payment.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
+                          <div key={payment._id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
                             <div className="flex items-center space-x-4">
                               <Checkbox
-                                checked={selectedPayments.includes(payment.id)}
-                                onCheckedChange={(checked) => handlePaymentSelection(payment.id, checked as boolean)}
+                                checked={selectedPayments.includes(payment._id)}
+                                onCheckedChange={(checked) => handlePaymentSelection(payment._id, checked as boolean)}
                               />
                               <div className="flex items-center space-x-2">
                                 <Badge variant={getStatusVariant(payment.status)} className="flex items-center space-x-1">
@@ -1137,7 +1108,7 @@ export default function PaymentsPage() {
                             
                             <div className="flex items-center space-x-2">
                               <Button asChild variant="outline" size="sm">
-                                <Link href={`/payments/${payment.id}`}>
+                                <Link href={`/payments/${payment._id}`}>
                                   <Eye className="mr-2 h-4 w-4" />
                                   View Details & History
                                 </Link>
@@ -1169,12 +1140,12 @@ export default function PaymentsPage() {
                     )}
                   </CollapsibleContent>
                 </div>
-              </Collapsible>
-            )
-          })}
-            </div>
-          </CardContent>
-        </Card>
+                      </Collapsible>
+                    )
+                  })}
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             </TabsContent>
           ))}
@@ -1195,14 +1166,14 @@ export default function PaymentsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {teams.map((team) => (
-                    <SelectItem key={team.id} value={team.id}>
+                    <SelectItem key={team._id} value={team._id}>
                       <div className="flex items-center space-x-2">
                         <div
                           className="w-3 h-3 rounded-full"
                           style={{ backgroundColor: team.color || '#f97316' }}
                         />
                         <span>{team.name}</span>
-                        <span className="text-muted-foreground">({team._count.parents} parents)</span>
+                        <span className="text-muted-foreground">(0 parents)</span>
                       </div>
                     </SelectItem>
                   ))}

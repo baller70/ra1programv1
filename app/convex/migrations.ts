@@ -14,9 +14,13 @@ export const importPrismaData = mutation({
     const convertedData = data.map((record: any) => {
       const converted = { ...record };
       
-      // Convert Date objects to timestamps
+      // Convert Date objects to timestamps and handle null values
       Object.keys(converted).forEach(key => {
-        if (converted[key] instanceof Date || 
+        // Convert null values to undefined for Convex optional fields FIRST
+        if (converted[key] === null) {
+          converted[key] = undefined;
+        }
+        else if (converted[key] instanceof Date || 
             (typeof converted[key] === 'string' && 
              /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(converted[key]))) {
           converted[key] = new Date(converted[key]).getTime();
@@ -71,4 +75,4 @@ export const getMigrationStatus = mutation({
     
     return status;
   },
-}); 
+});    

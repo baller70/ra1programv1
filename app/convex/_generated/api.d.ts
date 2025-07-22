@@ -14,6 +14,9 @@ import type {
   FunctionReference,
 } from "convex/server";
 import type * as migrations from "../migrations.js";
+import type * as parents from "../parents.js";
+import type * as payments from "../payments.js";
+import type * as teams from "../teams.js";
 
 /**
  * A utility for referencing Convex functions in your app's API.
@@ -25,6 +28,9 @@ import type * as migrations from "../migrations.js";
  */
 declare const fullApi: ApiFromModules<{
   migrations: typeof migrations;
+  parents: typeof parents;
+  payments: typeof payments;
+  teams: typeof teams;
 }>;
 export declare const api: FilterApi<
   typeof fullApi,

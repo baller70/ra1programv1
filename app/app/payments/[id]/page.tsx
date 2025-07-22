@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { useQuery, useMutation } from "convex/react"
+import { api } from "../../../convex/_generated/api"
+import { Id } from "../../../convex/_generated/dataModel"
 import Link from 'next/link'
 import { Button } from '../../../components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card'
@@ -203,12 +206,20 @@ export default function PaymentDetailPage() {
   const params = useParams()
   const router = useRouter()
   const { toast } = useToast()
-  const [payment, setPayment] = useState<Payment | null>(null)
-  const [paymentHistory, setPaymentHistory] = useState<PaymentHistory[]>([])
+  const payment = useQuery(api.payments.getPayment, { 
+    id: params.id as Id<"payments"> 
+  })
+  const paymentHistoryData = useQuery(api.payments.getPaymentHistory, { 
+    paymentId: params.id as Id<"payments"> 
+  })
+  const updatePayment = useMutation(api.payments.updatePayment)
+  
   const [communicationHistory, setCommunicationHistory] = useState<CommunicationRecord[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [commHistoryLoading, setCommHistoryLoading] = useState(false)
+  
+  const paymentHistory = paymentHistoryData?.history || []
   const [sendingReminder, setSendingReminder] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loadingStripe, setLoadingStripe] = useState(false);
@@ -293,55 +304,10 @@ export default function PaymentDetailPage() {
   ]
 
   useEffect(() => {
-    fetchPaymentDetails()
-    fetchPaymentHistory()
-  }, [params.id])
-
-  useEffect(() => {
     if (payment?.parent?.id) {
       fetchCommunicationHistory()
     }
   }, [payment?.parent?.id])
-
-  const fetchPaymentDetails = async () => {
-    try {
-      setLoading(true)
-      const response = await fetch(`/api/payments/${params.id}`)
-      
-      if (!response.ok) {
-        if (response.status === 404) {
-          setError('Payment not found')
-        } else {
-          setError('Failed to load payment details')
-        }
-        return
-      }
-
-      const data = await response.json()
-      setPayment(data)
-    } catch (error) {
-      console.error('Error fetching payment:', error)
-      setError('Failed to load payment details')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const fetchPaymentHistory = async () => {
-    try {
-      setHistoryLoading(true)
-      const response = await fetch(`/api/payments/${params.id}/history`)
-      
-      if (response.ok) {
-        const data = await response.json()
-        setPaymentHistory(data.history || [])
-      }
-    } catch (error) {
-      console.error('Error fetching payment history:', error)
-    } finally {
-      setHistoryLoading(false)
-    }
-  }
 
   const fetchCommunicationHistory = async () => {
     if (!payment?.parent?.id) return
