@@ -298,8 +298,8 @@ export default function PaymentsPage() {
 
 
   const filteredPayments = payments.filter(payment => {
-    const matchesSearch = payment.parent?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         payment.parent?.email?.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesSearch = (payment.parentName || payment.parent?.name || '')?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (payment.parentEmail || payment.parent?.email || '')?.toLowerCase().includes(searchTerm.toLowerCase())
     return searchTerm ? matchesSearch : true
   })
 
@@ -1074,8 +1074,8 @@ export default function PaymentsPage() {
                                 )}
                               </div>
                               <div>
-                                <p className="font-medium">{payment.parent?.name}</p>
-                                <p className="text-sm text-muted-foreground">{payment.parent?.email}</p>
+                                <p className="font-medium">{payment.parentName || payment.parent?.name || 'Unknown Parent'}</p>
+                                <p className="text-sm text-muted-foreground">{payment.parentEmail || payment.parent?.email || 'No email'}</p>
                                 <div className="flex items-center space-x-2 mt-1">
                                   <Badge variant="secondary" className="text-xs">
                                     Latest Payment

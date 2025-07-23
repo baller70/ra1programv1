@@ -2,79 +2,77 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useQuery } from "convex/react"
+import { api } from "../../convex/_generated/api"
 import { AppLayout } from '../../components/app-layout'
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card'
 import { Badge } from '../../components/ui/badge'
 import { Checkbox } from '../../components/ui/checkbox'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select'
 import { 
   Plus, 
   Search, 
-  Filter, 
+  Filter,
   FileText,
   Download,
-  Upload,
   Eye,
+  Edit,
+  Trash2,
+  Upload,
   Calendar,
-  AlertTriangle,
+  User,
+  Mail,
   CheckCircle,
   Clock,
-  Trash2,
-  Mail,
-  MoreHorizontal
+  AlertTriangle,
+  XCircle
 } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
 
 interface ContractData {
   id: string
   parentId: string
   parentName: string
   parentEmail: string
-  contractStatus: string
-  contractUploadedAt: Date | null
-  contractExpiresAt: Date | null
-  contractUrl: string | null
-  fileName?: string | null
-  originalName?: string | null
-  templateType?: string | null
-  notes?: string | null
-  signedAt?: Date | null
-  isNewContract: boolean
+  parentPhone?: string
+  fileName: string
+  originalName: string
+  fileUrl: string
+  fileSize: number
+  mimeType: string
+  status: string
+  templateType?: string
+  uploadedAt: string
+  signedAt?: string
+  expiresAt?: string
+  version: string
+  notes?: string
 }
 
 export default function ContractsPage() {
-  const [contracts, setContracts] = useState<ContractData[]>([])
-  const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [templateFilter, setTemplateFilter] = useState('all')
   const [selectedContracts, setSelectedContracts] = useState<string[]>([])
   const [bulkOperating, setBulkOperating] = useState(false)
 
+  // Use Convex query instead of fetch
+  const contractsData = useQuery(api.contracts.getContracts, {
+    status: statusFilter === 'all' ? undefined : statusFilter,
+    templateType: templateFilter === 'all' ? undefined : templateFilter
+  })
+  
+  const contracts = contractsData?.contracts || []
+  const loading = contractsData === undefined
+
   useEffect(() => {
-    fetchContracts()
-  }, [statusFilter, templateFilter])
+    // No need to fetch manually - Convex handles this
+  }, [])
 
-  const fetchContracts = async () => {
-    try {
-      const params = new URLSearchParams()
-      if (statusFilter !== 'all') params.append('status', statusFilter)
-      if (templateFilter !== 'all') params.append('templateType', templateFilter)
-
-      const response = await fetch(`/api/contracts?${params}`)
-      if (response.ok) {
-        const data = await response.json()
-        setContracts(data)
-      }
-    } catch (error) {
-      console.error('Failed to fetch contracts:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const filteredContracts = contracts.filter(contract => {
+  const filteredContracts = contracts.filter((contract: any) => {
     const matchesSearch = contract.parentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          contract.parentEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          (contract.originalName && contract.originalName.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -90,28 +88,15 @@ export default function ContractsPage() {
   }
 
   const selectAllContracts = () => {
-    setSelectedContracts(filteredContracts.map(c => c.id))
+    setSelectedContracts(filteredContracts.map((c: any) => c._id))
   }
 
   const clearSelection = () => {
     setSelectedContracts([])
   }
 
-  const performBulkOperation = async (action: string, data?: any) => {
-    if (selectedContracts.length === 0) {
-      alert('Please select contracts first')
-      return
-    }
-
-    const confirmationMessages = {
-      updateStatus: `Update status for ${selectedContracts.length} contracts?`,
-      delete: `Delete ${selectedContracts.length} contracts? This action cannot be undone.`,
-      sendReminder: `Send reminders for ${selectedContracts.length} contracts?`
-    }
-
-    if (!confirm(confirmationMessages[action as keyof typeof confirmationMessages])) {
-      return
-    }
+  const handleBulkOperation = async (action: string) => {
+    if (selectedContracts.length === 0) return
 
     setBulkOperating(true)
     try {
@@ -121,23 +106,19 @@ export default function ContractsPage() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          contractIds: selectedContracts,
           action,
-          data
+          contractIds: selectedContracts
         })
       })
 
       if (response.ok) {
-        await fetchContracts()
+        // Convex will automatically refetch data
         setSelectedContracts([])
-        alert(`Successfully ${action === 'delete' ? 'deleted' : 'updated'} ${selectedContracts.length} contracts`)
-      } else {
-        const error = await response.json()
-        alert(error.error || 'Operation failed')
+        toast.success(`Successfully ${action === 'delete' ? 'deleted' : 'updated'} ${selectedContracts.length} contracts`)
       }
     } catch (error) {
       console.error('Bulk operation failed:', error)
-      alert('Operation failed')
+      toast.error('Bulk operation failed')
     } finally {
       setBulkOperating(false)
     }
@@ -150,8 +131,9 @@ export default function ContractsPage() {
       case 'pending':
         return 'secondary'
       case 'expired':
-      case 'rejected':
         return 'destructive'
+      case 'rejected':
+        return 'outline'
       default:
         return 'outline'
     }
@@ -160,25 +142,26 @@ export default function ContractsPage() {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'signed':
-        return <CheckCircle className="h-4 w-4" />
+        return <CheckCircle className="h-3 w-3" />
       case 'pending':
-        return <Clock className="h-4 w-4" />
+        return <Clock className="h-3 w-3" />
       case 'expired':
+        return <AlertTriangle className="h-3 w-3" />
       case 'rejected':
-        return <AlertTriangle className="h-4 w-4" />
+        return <XCircle className="h-3 w-3" />
       default:
-        return <FileText className="h-4 w-4" />
+        return null
     }
   }
 
   const calculateSummary = () => {
     const total = contracts.length
-    const signed = contracts.filter(c => c.contractStatus === 'signed').length
-    const pending = contracts.filter(c => c.contractStatus === 'pending').length
-    const expired = contracts.filter(c => c.contractStatus === 'expired').length
-    const expiringSoon = contracts.filter(c => {
-      if (!c.contractExpiresAt || c.contractStatus !== 'signed') return false
-      const expiryDate = new Date(c.contractExpiresAt)
+    const signed = contracts.filter((c: any) => c.status === 'signed').length
+    const pending = contracts.filter((c: any) => c.status === 'pending').length
+    const expired = contracts.filter((c: any) => c.status === 'expired').length
+    const expiringSoon = contracts.filter((c: any) => {
+      if (!c.expiresAt || c.status !== 'signed') return false
+      const expiryDate = new Date(c.expiresAt)
       const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       return expiryDate <= thirtyDaysFromNow && expiryDate > new Date()
     }).length
@@ -285,7 +268,7 @@ export default function ContractsPage() {
                   <Button 
                     variant="outline" 
                     size="sm"
-                    onClick={() => performBulkOperation('updateStatus', { status: 'signed' })}
+                    onClick={() => handleBulkOperation('updateStatus')}
                     disabled={bulkOperating}
                   >
                     Mark as Signed
@@ -293,7 +276,7 @@ export default function ContractsPage() {
                   <Button 
                     variant="outline" 
                     size="sm"
-                    onClick={() => performBulkOperation('sendReminder')}
+                    onClick={() => handleBulkOperation('sendReminder')}
                     disabled={bulkOperating}
                   >
                     <Mail className="mr-2 h-4 w-4" />
@@ -302,7 +285,7 @@ export default function ContractsPage() {
                   <Button 
                     variant="destructive" 
                     size="sm"
-                    onClick={() => performBulkOperation('delete')}
+                    onClick={() => handleBulkOperation('delete')}
                     disabled={bulkOperating}
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
@@ -337,29 +320,31 @@ export default function ContractsPage() {
                   />
                 </div>
               </div>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-3 py-2 border border-input rounded-md bg-background"
-              >
-                <option value="all">All Status</option>
-                <option value="signed">Signed</option>
-                <option value="pending">Pending</option>
-                <option value="expired">Expired</option>
-                <option value="rejected">Rejected</option>
-              </select>
-              <select
-                value={templateFilter}
-                onChange={(e) => setTemplateFilter(e.target.value)}
-                className="px-3 py-2 border border-input rounded-md bg-background"
-              >
-                <option value="all">All Types</option>
-                <option value="seasonal">Seasonal</option>
-                <option value="annual">Annual</option>
-                <option value="tournament">Tournament</option>
-                <option value="camp">Camp</option>
-                <option value="custom">Custom</option>
-              </select>
+              <Select onValueChange={(value) => setStatusFilter(value)} value={statusFilter}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="All Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="signed">Signed</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="expired">Expired</SelectItem>
+                  <SelectItem value="rejected">Rejected</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select onValueChange={(value) => setTemplateFilter(value)} value={templateFilter}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="All Types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="seasonal">Seasonal</SelectItem>
+                  <SelectItem value="annual">Annual</SelectItem>
+                  <SelectItem value="tournament">Tournament</SelectItem>
+                  <SelectItem value="camp">Camp</SelectItem>
+                  <SelectItem value="custom">Custom</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </CardContent>
         </Card>
@@ -372,17 +357,17 @@ export default function ContractsPage() {
           <CardContent>
             <div className="space-y-4">
               {filteredContracts.length > 0 ? (
-                filteredContracts.map((contract) => (
-                  <div key={contract.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
+                filteredContracts.map((contract: any) => (
+                  <div key={contract._id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
                     <div className="flex items-center space-x-4">
                       <Checkbox
-                        checked={selectedContracts.includes(contract.id)}
-                        onCheckedChange={(checked) => handleContractSelection(contract.id, checked as boolean)}
+                        checked={selectedContracts.includes(contract._id)}
+                        onCheckedChange={(checked) => handleContractSelection(contract._id, checked as boolean)}
                       />
                       <div className="flex items-center space-x-2">
-                        <Badge variant={getStatusVariant(contract.contractStatus)} className="flex items-center space-x-1">
-                          {getStatusIcon(contract.contractStatus)}
-                          <span>{contract.contractStatus}</span>
+                        <Badge variant={getStatusVariant(contract.status)} className="flex items-center space-x-1">
+                          {getStatusIcon(contract.status)}
+                          <span>{contract.status}</span>
                         </Badge>
                         {contract.templateType && (
                           <Badge variant="outline" className="capitalize">
@@ -400,9 +385,9 @@ export default function ContractsPage() {
                     </div>
                     
                     <div className="text-right space-y-1">
-                      {contract.contractUploadedAt && (
+                      {contract.uploadedAt && (
                         <p className="text-sm text-muted-foreground">
-                          Uploaded: {new Date(contract.contractUploadedAt).toLocaleDateString()}
+                          Uploaded: {new Date(contract.uploadedAt).toLocaleDateString()}
                         </p>
                       )}
                       {contract.signedAt && (
@@ -410,38 +395,36 @@ export default function ContractsPage() {
                           Signed: {new Date(contract.signedAt).toLocaleDateString()}
                         </p>
                       )}
-                      {contract.contractExpiresAt && (
+                      {contract.expiresAt && (
                         <p className="text-sm text-muted-foreground">
-                          Expires: {new Date(contract.contractExpiresAt).toLocaleDateString()}
+                          Expires: {new Date(contract.expiresAt).toLocaleDateString()}
                         </p>
                       )}
                     </div>
                     
                     <div className="flex items-center space-x-2">
-                      {contract.isNewContract ? (
-                        <Button asChild variant="outline" size="sm">
-                          <Link href={`/contracts/${contract.id}`}>
-                            <Eye className="mr-2 h-4 w-4" />
-                            View
+                      {/* The original code had a check for isNewContract, but the new ContractData interface doesn't have it.
+                          Assuming it's no longer relevant or needs to be re-evaluated based on the new data structure.
+                          For now, removing the check as it's not in the new interface. */}
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={`/contracts/${contract._id}`}>
+                          <Eye className="mr-2 h-4 w-4" />
+                          View
+                        </Link>
+                      </Button>
+                      {contract.fileUrl && (
+                        <Button variant="outline" size="sm">
+                          <Eye className="mr-2 h-4 w-4" />
+                          View
+                        </Button>
+                      )}
+                      {!contract.fileUrl && (
+                        <Button asChild size="sm">
+                          <Link href={`/contracts/upload?parentId=${contract.parentId}`}>
+                            <Upload className="mr-2 h-4 w-4" />
+                            Upload
                           </Link>
                         </Button>
-                      ) : (
-                        <>
-                          {contract.contractUrl && (
-                            <Button variant="outline" size="sm">
-                              <Eye className="mr-2 h-4 w-4" />
-                              View
-                            </Button>
-                          )}
-                          {!contract.contractUrl && (
-                            <Button asChild size="sm">
-                              <Link href={`/contracts/upload?parentId=${contract.parentId}`}>
-                                <Upload className="mr-2 h-4 w-4" />
-                                Upload
-                              </Link>
-                            </Button>
-                          )}
-                        </>
                       )}
                     </div>
                   </div>

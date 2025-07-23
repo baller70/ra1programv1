@@ -2,6 +2,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useQuery } from "convex/react"
+import { api } from "../../convex/_generated/api"
 import { AppLayout } from '../../components/app-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card'
 import { Badge } from '../../components/ui/badge'
@@ -90,32 +92,20 @@ interface DashboardData {
 }
 
 export default function AnalyticsPage() {
-  const [data, setData] = useState<DashboardData | null>(null)
-  const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
-  useEffect(() => {
-    fetchDashboardData()
-  }, [])
+  // Use Convex query instead of fetch
+  const data = useQuery(api.dashboard.getAnalyticsDashboard)
+  const loading = data === undefined
 
-  const fetchDashboardData = async () => {
-    try {
-      const response = await fetch('/api/analytics/dashboard')
-      if (response.ok) {
-        const dashboardData = await response.json()
-        setData(dashboardData)
-      }
-    } catch (error) {
-      console.error('Failed to fetch dashboard data:', error)
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
-    }
-  }
+  useEffect(() => {
+    // No need to fetch manually - Convex handles this
+  }, [])
 
   const handleRefresh = () => {
     setRefreshing(true)
-    fetchDashboardData()
+    // Convex will automatically refetch data
+    setTimeout(() => setRefreshing(false), 1000)
   }
 
   const formatCurrency = (amount: number) => {
@@ -140,7 +130,7 @@ export default function AnalyticsPage() {
       <AppLayout>
         <div className="text-center py-12">
           <h3 className="text-lg font-semibold mb-2">Failed to load analytics data</h3>
-          <Button onClick={fetchDashboardData}>
+          <Button onClick={handleRefresh}>
             <RefreshCw className="mr-2 h-4 w-4" />
             Retry
           </Button>

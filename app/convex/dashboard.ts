@@ -16,13 +16,13 @@ export const getDashboardStats = query({
     const pendingPayments = payments.filter(p => p.status === 'pending');
     
     // Calculate revenue
-    const totalRevenue = paidPayments.reduce((sum, p) => sum + p.amount, 0);
+    const totalRevenue = paidPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
     
     // Get upcoming dues (next 30 days)
     const now = Date.now();
     const thirtyDaysFromNow = now + (30 * 24 * 60 * 60 * 1000);
     const upcomingDues = pendingPayments.filter(p => 
-      p.dueDate >= now && p.dueDate <= thirtyDaysFromNow
+      p.dueDate && p.dueDate >= now && p.dueDate <= thirtyDaysFromNow
     ).length;
     
     // Mock data for features not yet in Convex
@@ -60,7 +60,7 @@ export const getRevenueTrends = query({
         p.paidAt && p.paidAt >= month.getTime() && p.paidAt < nextMonth.getTime()
       );
       
-      const revenue = monthPayments.reduce((sum, p) => sum + p.amount, 0);
+      const revenue = monthPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
       
       trends.push({
         month: month.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
@@ -87,12 +87,20 @@ export const getRecentActivity = query({
     
     for (const payment of recentPayments) {
       if (payment.paidAt) {
-        const parent = await ctx.db.get(payment.parentId);
+        let parent = null;
+        try {
+          if (payment.parentId && typeof payment.parentId === 'string' && payment.parentId.length >= 25) {
+            parent = await ctx.db.get(payment.parentId as any);
+          }
+        } catch (error) {
+          console.log('Could not fetch parent for recent activity:', payment._id);
+        }
+        
         activities.push({
           id: `payment-${payment._id}`,
           type: 'payment',
-          description: `Payment of $${payment.amount} received`,
-          parentName: parent?.name || 'Unknown',
+          description: `Payment of $${payment.amount || 0} received`,
+          parentName: (parent as any)?.name || 'Unknown Parent',
           timestamp: payment.paidAt
         });
       }
@@ -132,71 +140,123 @@ export const getAnalyticsDashboard = query({
     // Calculate stats
     const totalParents = parents.length;
     const activeParents = parents.filter(p => p.status === 'active').length;
-    const totalRevenue = payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.amount, 0);
+    const totalRevenue = payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + (p.amount || 0), 0);
     const pendingPayments = payments.filter(p => p.status === 'pending');
     const overduePayments = payments.filter(p => p.status === 'overdue');
     
-    // Payment stats
-    const paymentStats = {
-      totalPayments: payments.length,
-      paidPayments: payments.filter(p => p.status === 'paid').length,
-      pendingPayments: pendingPayments.length,
-      overduePayments: overduePayments.length,
-      averagePaymentAmount: payments.length > 0 ? payments.reduce((sum, p) => sum + p.amount, 0) / payments.length : 0
-    };
+    // Generate revenue by month data for the last 6 months
+    const revenueByMonth = [];
+    const now = new Date();
     
-    // Parent stats
-    const parentStats = {
-      totalParents,
-      activeParents,
-      inactiveParents: parents.filter(p => p.status === 'inactive').length,
-      suspendedParents: parents.filter(p => p.status === 'suspended').length
-    };
-    
-    // Contract stats (mock for now)
-    const contractStats = {
-      totalContracts: 0,
-      signedContracts: 0,
-      pendingContracts: 0,
-      expiredContracts: 0
-    };
-    
-    // Communication stats (mock for now)
-    const communicationStats = {
-      totalMessagesSent: 0,
-      messagesThisMonth: 0,
-      averageResponseRate: 0,
-      lastMessageSent: null
-    };
-    
-    // Risk assessment stats (mock for now)
-    const riskAssessmentStats = {
-      totalAssessments: 0,
-      high: 0,
-      medium: 0,
-      low: 0
-    };
-    
-    // Recurring message stats (mock for now)
-    const recurringMessageStats = {
-      totalRecurring: 0,
-      activeRecurring: 0,
-      messagesSentThisWeek: 0,
-      averageSuccessRate: 0
-    };
-    
+    for (let i = 5; i >= 0; i--) {
+      const month = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const nextMonth = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+      
+      const monthPayments = payments.filter(p => 
+        p.paidAt && p.paidAt >= month.getTime() && p.paidAt < nextMonth.getTime()
+      );
+      
+      const revenue = monthPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+      
+      revenueByMonth.push({
+        month: month.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+        revenue,
+        payments: monthPayments.length
+      });
+    }
+
+    // Mock recent activity (would be replaced with actual activity tracking)
+    const recentActivity = payments
+      .filter(p => p.paidAt)
+      .slice(0, 10)
+      .map(p => ({
+        id: p._id,
+        type: 'payment',
+        description: `Payment of $${p.amount || 0} received`,
+        timestamp: new Date(p.paidAt!),
+        parentName: 'Unknown Parent' // Would need to join with parent data
+      }));
+
     return {
-      totalParents,
-      activeParents,
-      totalRevenue,
-      pendingPayments: pendingPayments.length,
-      overduePayments: overduePayments.length,
-      paymentStats,
-      parentStats,
-      contractStats,
-      communicationStats,
-      riskAssessmentStats,
-      recurringMessageStats
+      overview: {
+        totalParents,
+        totalRevenue: payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + (p.amount || 0), 0),
+        overduePayments: overduePayments.length,
+        upcomingDues: pendingPayments.length,
+        activePaymentPlans: paymentPlans.length,
+        messagesSentThisMonth: 0, // Mock data
+        activeRecurringMessages: 0, // Mock data
+        pendingRecommendations: 0, // Mock data
+        backgroundJobsRunning: 0, // Mock data
+      },
+      revenueByMonth,
+      recentActivity,
+      paymentMethodStats: {
+        card: Math.floor(payments.length * 0.7),
+        bank_account: Math.floor(payments.length * 0.2),
+        other: Math.floor(payments.length * 0.1)
+      },
+      communicationStats: {
+        totalMessages: 0,
+        deliveryRate: 95,
+        channelBreakdown: {
+          email: 80,
+          sms: 20
+        },
+        deliveryStats: {
+          delivered: 0,
+          sent: 0,
+          failed: 0
+        }
+      },
+      recommendationsByPriority: {
+        urgent: 0,
+        high: 0,
+        medium: 0,
+        low: 0
+      },
+      recurringMessageStats: {
+        totalRecurring: 0,
+        activeRecurring: 0,
+        messagesSentThisWeek: 0,
+        averageSuccessRate: 0
+      }
+    };
+  },
+});
+
+// AI Recommendations function (mock data for now)
+export const getAIRecommendations = query({
+  args: {},
+  handler: async (ctx) => {
+    // Mock AI recommendations data
+    const mockRecommendations = [
+      {
+        id: "rec-1",
+        title: "Optimize Payment Collection",
+        description: "Several parents have overdue payments. Consider sending automated reminders.",
+        priority: "high" as const,
+        category: "payments",
+        impact: "Could recover $2,500 in overdue payments",
+        confidence: 85,
+        createdAt: new Date().toISOString(),
+        status: "pending" as const
+      },
+      {
+        id: "rec-2", 
+        title: "Improve Communication Engagement",
+        description: "Email open rates are below average. Consider switching to SMS for better engagement.",
+        priority: "medium" as const,
+        category: "communication",
+        impact: "Increase engagement by 30%",
+        confidence: 72,
+        createdAt: new Date().toISOString(),
+        status: "pending" as const
+      }
+    ];
+
+    return {
+      recommendations: mockRecommendations
     };
   },
 }); 

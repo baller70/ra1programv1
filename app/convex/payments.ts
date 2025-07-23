@@ -38,15 +38,35 @@ export const getPayments = query({
 
     const enrichedPayments = await Promise.all(
       payments.map(async (payment) => {
-        const parent = await ctx.db.get(payment.parentId);
-        const paymentPlan = payment.paymentPlanId
-          ? await ctx.db.get(payment.paymentPlanId)
-          : null;
+        // Only try to get parent if parentId is a valid Convex ID
+        let parent = null;
+        try {
+          if (payment.parentId && typeof payment.parentId === 'string' && payment.parentId.length >= 25) {
+            parent = await ctx.db.get(payment.parentId as Id<"parents">);
+          }
+        } catch (error) {
+          // Invalid ID, keep parent as null
+          console.log('Could not fetch parent for payment:', payment._id, 'parentId:', payment.parentId);
+        }
+
+        // Only try to get payment plan if paymentPlanId is a valid Convex ID  
+        let paymentPlan = null;
+        try {
+          if (payment.paymentPlanId && typeof payment.paymentPlanId === 'string' && payment.paymentPlanId.length >= 25) {
+            paymentPlan = await ctx.db.get(payment.paymentPlanId as Id<"paymentPlans">);
+          }
+        } catch (error) {
+          // Invalid ID, keep paymentPlan as null
+          console.log('Could not fetch payment plan for payment:', payment._id);
+        }
 
         return {
           ...payment,
           parent,
           paymentPlan,
+          // Add fallback parent name if parent fetch failed
+          parentName: parent?.name || 'Unknown Parent',
+          parentEmail: parent?.email || 'No email'
         };
       })
     );
@@ -54,8 +74,8 @@ export const getPayments = query({
     let filteredPayments = enrichedPayments;
     if (search) {
       filteredPayments = enrichedPayments.filter((payment) =>
-        payment.parent?.name?.toLowerCase().includes(search.toLowerCase()) ||
-        payment.parent?.email?.toLowerCase().includes(search.toLowerCase())
+        (payment.parent?.name && payment.parent.name.toLowerCase().includes(search.toLowerCase())) ||
+        (payment.parent?.email && payment.parent.email.toLowerCase().includes(search.toLowerCase()))
       );
     }
 
@@ -64,14 +84,14 @@ export const getPayments = query({
       filteredPayments.forEach((payment) => {
         const parentId = payment.parentId;
         if (!latestPaymentsMap.has(parentId) || 
-            payment.dueDate > latestPaymentsMap.get(parentId).dueDate) {
+            (payment.dueDate && latestPaymentsMap.get(parentId).dueDate && payment.dueDate > latestPaymentsMap.get(parentId).dueDate)) {
           latestPaymentsMap.set(parentId, payment);
         }
       });
       filteredPayments = Array.from(latestPaymentsMap.values());
     }
 
-    filteredPayments.sort((a, b) => a.dueDate - b.dueDate);
+    filteredPayments.sort((a, b) => (a.dueDate || 0) - (b.dueDate || 0));
 
     const offset = (page - 1) * limit;
     const paginatedPayments = filteredPayments.slice(offset, offset + limit);
@@ -94,10 +114,23 @@ export const getPayment = query({
     const payment = await ctx.db.get(args.id);
     if (!payment) return null;
 
-    const parent = await ctx.db.get(payment.parentId);
-    const paymentPlan = payment.paymentPlanId
-      ? await ctx.db.get(payment.paymentPlanId)
-      : null;
+    let parent = null;
+    try {
+      if (payment.parentId && typeof payment.parentId === 'string' && payment.parentId.length > 25) {
+        parent = await ctx.db.get(payment.parentId as Id<"parents">);
+      }
+    } catch (error) {
+      console.warn('Invalid parent ID:', payment.parentId);
+    }
+
+    let paymentPlan = null;
+    try {
+      if (payment.paymentPlanId && typeof payment.paymentPlanId === 'string' && payment.paymentPlanId.length > 25) {
+        paymentPlan = await ctx.db.get(payment.paymentPlanId as Id<"paymentPlans">);
+      }
+    } catch (error) {
+      console.warn('Invalid payment plan ID:', payment.paymentPlanId);
+    }
 
     return {
       ...payment,
@@ -117,19 +150,19 @@ export const getPaymentAnalytics = query({
 
     const totalRevenue = payments
       .filter((p) => p.status === "paid")
-      .reduce((sum, p) => sum + p.amount, 0);
+      .reduce((sum, p) => sum + (p.amount || 0), 0);
 
     const collectedPayments = payments
       .filter((p) => p.status === "paid")
-      .reduce((sum, p) => sum + p.amount, 0);
+      .reduce((sum, p) => sum + (p.amount || 0), 0);
 
     const pendingPayments = payments
       .filter((p) => p.status === "pending")
-      .reduce((sum, p) => sum + p.amount, 0);
+      .reduce((sum, p) => sum + (p.amount || 0), 0);
 
     const overduePayments = payments
       .filter((p) => p.status === "overdue")
-      .reduce((sum, p) => sum + p.amount, 0);
+      .reduce((sum, p) => sum + (p.amount || 0), 0);
 
     const activePlans = await ctx.db
       .query("paymentPlans")
@@ -310,5 +343,30 @@ export const getPaymentPlans = query({
     );
 
     return enrichedPlans;
+  },
+});
+
+// Debug function to check payment data structure
+export const debugPaymentData = query({
+  args: {},
+  handler: async (ctx) => {
+    const payments = await ctx.db.query("payments").take(3);
+    const parents = await ctx.db.query("parents").take(3);
+    
+    return {
+      samplePayments: payments.map(p => ({
+        id: p._id,
+        parentId: p.parentId,
+        parentIdType: typeof p.parentId,
+        parentIdLength: p.parentId ? p.parentId.toString().length : 0,
+        amount: p.amount,
+        status: p.status
+      })),
+      sampleParents: parents.map(p => ({
+        id: p._id,
+        name: p.name,
+        email: p.email
+      }))
+    };
   },
 });

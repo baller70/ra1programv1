@@ -2,70 +2,135 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useParams } from 'next/navigation'
+import { useQuery, useMutation } from "convex/react"
+import { api } from "../../../convex/_generated/api"
+import { useParams, useRouter } from 'next/navigation'
 import { AppLayout } from '../../../components/app-layout'
 import { Button } from '../../../components/ui/button'
+import { Input } from '../../../components/ui/input'
+import { Label } from '../../../components/ui/label'
+import { Textarea } from '../../../components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card'
 import { Badge } from '../../../components/ui/badge'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../../components/ui/dialog'
-import { Textarea } from '../../../components/ui/textarea'
-import { Label } from '../../../components/ui/label'
-import { useToast } from '../../../hooks/use-toast'
+import { Separator } from '../../../components/ui/separator'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select'
 import { 
-  ArrowLeft, 
-  Edit, 
-  Mail, 
+  User, 
   Phone, 
+  Mail, 
   MapPin, 
-  FileText,
-  CreditCard,
-  MessageSquare,
   Calendar,
   DollarSign,
-  Brain,
+  FileText,
+  MessageSquare,
+  Save,
+  ArrowLeft,
+  Edit,
+  Trash2,
   AlertTriangle,
-  TrendingUp,
-  Target,
+  CheckCircle,
+  Clock,
+  CreditCard,
+  Receipt,
+  Brain,
   RefreshCw,
-  Shield,
   Lightbulb,
+  TrendingUp,
+  Shield,
+  Target,
   Send
 } from 'lucide-react'
 import Link from 'next/link'
-import { ParentWithRelations } from '../../../lib/types'
+import { toast } from 'sonner'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../../components/ui/dialog'
 
-export default function ParentProfilePage() {
+interface ParentData {
+  id: string
+  name: string
+  email: string
+  phone?: string
+  address?: string
+  emergencyContact?: string
+  status: string
+  createdAt: string
+  updatedAt: string
+  notes?: string
+  childName?: string
+  childAge?: number
+  program?: string
+  paymentMethod?: string
+  totalPaid?: number
+  totalOwed?: number
+  lastPaymentDate?: string
+  contractStatus?: string
+  contractUploadedAt?: string
+  contractExpiresAt?: string
+  paymentPlans?: { id: string; type: string; description: string; totalAmount: number; installmentAmount: number; installments: number }[]
+  payments?: { id: string; amount: number; dueDate: string; status: string; paidAt?: string }[]
+  messageLogs?: { id: string; content: string; channel: string; sentAt: string; status: string }[]
+  payments?: { id: string; amount: number; dueDate: string; status: string; paidAt?: string }[]
+}
+
+interface PaymentData {
+  id: string
+  amount: number
+  status: string
+  dueDate: string
+  paidAt?: string
+  description: string
+}
+
+interface MessageData {
+  id: string
+  content: string
+  channel: string
+  sentAt: string
+  status: string
+}
+
+export default function ParentDetailPage() {
   const params = useParams()
-  const parentId = params?.id as string
-  const [parent, setParent] = useState<ParentWithRelations | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [aiAnalysis, setAiAnalysis] = useState<any>(null)
+  const router = useRouter()
+  const parentId = params.id as string
+
+  // Use Convex queries instead of fetch
+  const parent = useQuery(api.parents.getParent, { id: parentId as any })
+  const paymentsData = useQuery(api.payments.getPayments, { parentId: parentId as any })
+  const messagesData = useQuery(api.messageLogs.getMessagesByParent, { parentId })
+  
+  const updateParent = useMutation(api.parents.updateParent)
+  
+  const loading = parent === undefined
+  const payments = paymentsData?.payments || []
+  const messages = messagesData?.messages || []
+  
+  const [editing, setEditing] = useState(false)
   const [aiLoading, setAiLoading] = useState(false)
+  const [sendingMessage, setSendingMessage] = useState(false)
   const [showMessageDialog, setShowMessageDialog] = useState(false)
   const [messageContent, setMessageContent] = useState('')
-  const [sendingMessage, setSendingMessage] = useState(false)
+  const [aiAnalysis, setAiAnalysis] = useState<any>(null)
   const [executingAction, setExecutingAction] = useState<string | null>(null)
-  const { toast } = useToast()
+
+  const [formData, setFormData] = useState<Partial<ParentData>>({})
 
   useEffect(() => {
-    const fetchParent = async () => {
-      try {
-        const response = await fetch(`/api/parents/${parentId}`)
-        if (response.ok) {
-          const data = await response.json()
-          setParent(data)
-        }
-      } catch (error) {
-        console.error('Failed to fetch parent:', error)
-      } finally {
-        setLoading(false)
-      }
+    if (parent && !editing) {
+      setFormData({
+        name: (parent as any).name,
+        email: parent.email,
+        phone: parent.phone,
+        address: parent.address,
+        emergencyContact: parent.emergencyContact,
+        status: parent.status,
+        notes: parent.notes,
+        childName: (parent as any).childName,
+        childAge: (parent as any).childAge,
+        program: (parent as any).program,
+        paymentMethod: (parent as any).paymentMethod
+      })
     }
-
-    if (parentId) {
-      fetchParent()
-    }
-  }, [parentId])
+  }, [parent, editing])
 
   const fetchAIAnalysis = async () => {
     if (!parentId) return

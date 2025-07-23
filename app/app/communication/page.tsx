@@ -2,6 +2,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useQuery } from "convex/react"
+import { api } from "../../convex/_generated/api"
 import { AppLayout } from '../../components/app-layout'
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
@@ -25,30 +27,23 @@ import { TemplateWithRelations } from '../../lib/types'
 import { toast } from 'sonner'
 
 export default function CommunicationPage() {
-  const [templates, setTemplates] = useState<TemplateWithRelations[]>([])
-  const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [showAIGenerator, setShowAIGenerator] = useState(false)
   const [aiPrompt, setAiPrompt] = useState('')
   const [generating, setGenerating] = useState(false)
 
-  useEffect(() => {
-    const fetchTemplates = async () => {
-      try {
-        const response = await fetch('/api/templates')
-        if (response.ok) {
-          const data = await response.json()
-          setTemplates(data)
-        }
-      } catch (error) {
-        console.error('Failed to fetch templates:', error)
-      } finally {
-        setLoading(false)
-      }
-    }
+  // Use Convex query instead of fetch
+  const templatesData = useQuery(api.templates.getTemplates, {
+    search: searchTerm,
+    category: categoryFilter === 'all' ? undefined : categoryFilter
+  })
+  
+  const templates = templatesData?.templates || []
+  const loading = templatesData === undefined
 
-    fetchTemplates()
+  useEffect(() => {
+    // No need to fetch templates manually - Convex handles this
   }, [])
 
   const handleGenerateTemplate = async () => {
@@ -88,7 +83,7 @@ export default function CommunicationPage() {
                   try {
                     const finalTemplate = JSON.parse(buffer)
                     // Add the new template to the list
-                    setTemplates(prev => [finalTemplate, ...prev])
+                    // setTemplates(prev => [finalTemplate, ...prev]) // This line is removed as templates are now managed by Convex
                     setAiPrompt('')
                     setShowAIGenerator(false)
                     return
@@ -125,9 +120,11 @@ export default function CommunicationPage() {
   }
 
   const filteredTemplates = templates.filter(template => {
-    const matchesSearch = template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         template.subject.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesSearch = (template.name && template.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                         (template.subject && template.subject.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                         (template.body && template.body.toLowerCase().includes(searchTerm.toLowerCase()))
     const matchesCategory = categoryFilter === 'all' || template.category === categoryFilter
+    
     return matchesSearch && matchesCategory
   })
 
@@ -288,7 +285,7 @@ export default function CommunicationPage() {
         <div className="grid gap-4">
           {filteredTemplates.length > 0 ? (
             filteredTemplates.map((template) => (
-              <Card key={template.id} className="hover:shadow-md transition-shadow">
+              <Card key={template._id} className="hover:shadow-md transition-shadow">
                 <CardContent className="pt-6">
                   <div className="flex items-start justify-between">
                     <div className="flex-1 space-y-2">
@@ -303,14 +300,14 @@ export default function CommunicationPage() {
                       </div>
                       <p className="text-muted-foreground font-medium">{template.subject}</p>
                       <p className="text-sm text-muted-foreground line-clamp-2">
-                        {template.body.substring(0, 150)}...
+                        {template.body ? `${template.body.substring(0, 150)}...` : 'No content'}
                       </p>
                       <div className="flex items-center space-x-2">
-                        <Badge variant={getCategoryVariant(template.category)}>
+                        <Badge variant={getCategoryVariant(template.category || 'general')}>
                           {template.category}
                         </Badge>
                         <Badge variant="outline" className="flex items-center space-x-1">
-                          {getChannelIcon(template.channel)}
+                          {getChannelIcon(template.channel || 'email')}
                           <span>{template.channel}</span>
                         </Badge>
                         <span className="text-sm text-muted-foreground">
@@ -321,18 +318,18 @@ export default function CommunicationPage() {
                     
                     <div className="flex items-center space-x-2 ml-4">
                       <Button asChild variant="outline" size="sm">
-                        <Link href={`/communication/templates/${template.id}`}>
+                        <Link href={`/communication/templates/${template._id}`}>
                           <Eye className="h-4 w-4" />
                         </Link>
                       </Button>
                       <Button asChild variant="outline" size="sm">
-                        <Link href={`/communication/templates/${template.id}/edit`}>
+                        <Link href={`/communication/templates/${template._id}/edit`}>
                           <Edit className="h-4 w-4" />
                         </Link>
                       </Button>
                       <Button 
                         size="sm"
-                        onClick={() => handleQuickDraft(template)}
+                        onClick={() => handleQuickDraft(template as any)}
                       >
                         <Send className="h-4 w-4" />
                       </Button>
