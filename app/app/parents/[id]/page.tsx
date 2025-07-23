@@ -2,8 +2,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useQuery, useMutation } from "convex/react"
-import { api } from "../../../convex/_generated/api"
 import { useParams, useRouter } from 'next/navigation'
 import { AppLayout } from '../../../components/app-layout'
 import { Button } from '../../../components/ui/button'
@@ -43,32 +41,25 @@ import {
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../../components/ui/dialog'
+import { useQuery } from 'convex/react'
+import { api } from '../../../convex/_generated/api'
+import { Id } from '../../../convex/_generated/dataModel'
 
 interface ParentData {
-  id: string
+  _id: Id<"parents">
   name: string
   email: string
   phone?: string
   address?: string
   emergencyContact?: string
+  emergencyPhone?: string
   status: string
-  createdAt: string
-  updatedAt: string
+  createdAt?: number
+  updatedAt?: number
   notes?: string
-  childName?: string
-  childAge?: number
-  program?: string
-  paymentMethod?: string
-  totalPaid?: number
-  totalOwed?: number
-  lastPaymentDate?: string
   contractStatus?: string
-  contractUploadedAt?: string
-  contractExpiresAt?: string
-  paymentPlans?: { id: string; type: string; description: string; totalAmount: number; installmentAmount: number; installments: number }[]
-  payments?: { id: string; amount: number; dueDate: string; status: string; paidAt?: string }[]
-  messageLogs?: { id: string; content: string; channel: string; sentAt: string; status: string }[]
-  payments?: { id: string; amount: number; dueDate: string; status: string; paidAt?: string }[]
+  contractUploadedAt?: number
+  contractExpiresAt?: number
 }
 
 interface PaymentData {
@@ -93,17 +84,29 @@ export default function ParentDetailPage() {
   const router = useRouter()
   const parentId = params.id as string
 
-  // Use Convex queries instead of fetch
-  const parent = useQuery(api.parents.getParent, { id: parentId as any })
-  const paymentsData = useQuery(api.payments.getPayments, { parentId: parentId as any })
-  const messagesData = useQuery(api.messageLogs.getMessagesByParent, { parentId })
-  
-  const updateParent = useMutation(api.parents.updateParent)
-  
-  const loading = parent === undefined
-  const payments = paymentsData?.payments || []
-  const messages = messagesData?.messages || []
-  
+  // Validate that we have a proper parent ID before making queries
+  const isValidId = parentId && parentId !== 'undefined' && parentId.length > 20
+
+  // Use Convex queries only if we have a valid ID
+  const parent = useQuery(
+    api.parents.getParent, 
+    isValidId ? { id: parentId as Id<"parents"> } : "skip"
+  )
+  const paymentsData = useQuery(
+    api.payments.getPayments, 
+    isValidId ? { 
+      parentId: parentId as Id<"parents">,
+      limit: 10 
+    } : "skip"
+  )
+  const paymentPlansData = useQuery(
+    api.payments.getPaymentPlans, 
+    isValidId ? { 
+      parentId: parentId as Id<"parents">
+    } : "skip"
+  )
+
+  const [loading, setLoading] = useState(false)
   const [editing, setEditing] = useState(false)
   const [aiLoading, setAiLoading] = useState(false)
   const [sendingMessage, setSendingMessage] = useState(false)
@@ -114,20 +117,21 @@ export default function ParentDetailPage() {
 
   const [formData, setFormData] = useState<Partial<ParentData>>({})
 
+  // Extract data from queries
+  const payments = paymentsData?.payments || []
+  const paymentPlans = paymentPlansData || []
+
   useEffect(() => {
     if (parent && !editing) {
       setFormData({
-        name: (parent as any).name,
+        name: parent.name,
         email: parent.email,
         phone: parent.phone,
         address: parent.address,
         emergencyContact: parent.emergencyContact,
+        emergencyPhone: parent.emergencyPhone,
         status: parent.status,
-        notes: parent.notes,
-        childName: (parent as any).childName,
-        childAge: (parent as any).childAge,
-        program: (parent as any).program,
-        paymentMethod: (parent as any).paymentMethod
+        notes: parent.notes
       })
     }
   }, [parent, editing])
@@ -179,10 +183,7 @@ export default function ParentDetailPage() {
       })
 
       if (response.ok) {
-        toast({
-          title: 'Message sent successfully',
-          description: `Message sent to ${parent?.name}`,
-        })
+        toast.success(`Message sent to ${parent?.name}`)
         setMessageContent('')
         setShowMessageDialog(false)
       } else {
@@ -190,11 +191,7 @@ export default function ParentDetailPage() {
       }
     } catch (error) {
       console.error('Failed to send message:', error)
-      toast({
-        title: 'Failed to send message',
-        description: 'There was an error sending the message. Please try again.',
-        variant: 'destructive',
-      })
+      toast.error('There was an error sending the message. Please try again.')
     } finally {
       setSendingMessage(false)
     }
@@ -217,10 +214,10 @@ export default function ParentDetailPage() {
           context: {
             riskLevel: aiAnalysis?.riskLevel || 'unknown',
             riskScore: aiAnalysis?.riskScore || 0,
-            paymentStatus: parent.payments?.length > 0 ? 'has_payments' : 'no_payments',
-            overduePayments: parent.payments?.filter(p => new Date(p.dueDate) < new Date()).length || 0,
+            paymentStatus: payments?.length > 0 ? 'has_payments' : 'no_payments',
+            overduePayments: payments?.filter(p => new Date(p.dueDate) < new Date()).length || 0,
             contractStatus: parent.contractStatus,
-            recentCommunications: parent.messageLogs?.length || 0,
+            recentCommunications: payments?.length || 0,
             keyInsights: aiAnalysis?.keyInsights || [],
             recommendations: aiAnalysis?.recommendations || []
           },
@@ -417,7 +414,25 @@ export default function ParentDetailPage() {
     }
   }, [parent])
 
-  if (loading) {
+  // Check for invalid ID first
+  if (!isValidId) {
+    return (
+      <AppLayout>
+        <div className="text-center py-12">
+          <h1 className="text-2xl font-bold mb-4">Invalid Parent ID</h1>
+          <p className="text-muted-foreground mb-4">The parent ID in the URL is not valid.</p>
+          <Button asChild>
+            <Link href="/parents">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Parents
+            </Link>
+          </Button>
+        </div>
+      </AppLayout>
+    )
+  }
+
+  if (loading || parent === undefined) {
     return (
       <AppLayout>
         <div className="flex items-center justify-center min-h-[400px]">
@@ -524,7 +539,7 @@ export default function ParentDetailPage() {
               {sendingMessage ? 'Generating...' : 'Send Message'}
             </Button>
             <Button asChild>
-              <Link href={`/parents/${parent.id}/edit`}>
+              <Link href={`/parents/${parent._id}/edit`}>
                 <Edit className="mr-2 h-4 w-4" />
                 Edit Parent
               </Link>
@@ -826,9 +841,9 @@ export default function ParentDetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {parent.paymentPlans && parent.paymentPlans.length > 0 ? (
+            {paymentPlans && paymentPlans.length > 0 ? (
               <div className="space-y-4">
-                {parent.paymentPlans.map((plan) => (
+                {paymentPlans.map((plan) => (
                   <div key={plan.id} className="p-4 border rounded-lg">
                     <div className="flex items-center justify-between">
                       <div>
@@ -863,9 +878,9 @@ export default function ParentDetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {parent.payments && parent.payments.length > 0 ? (
+            {payments && payments.length > 0 ? (
               <div className="space-y-3">
-                {parent.payments.slice(0, 5).map((payment) => (
+                {payments.slice(0, 5).map((payment) => (
                   <div key={payment.id} className="flex items-center justify-between p-3 border rounded">
                     <div>
                       <p className="font-medium">${Number(payment.amount).toLocaleString()}</p>

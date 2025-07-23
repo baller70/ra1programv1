@@ -2,8 +2,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useQuery } from "convex/react"
-import { api } from "../../convex/_generated/api"
 import { AppLayout } from '../../components/app-layout'
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
@@ -35,12 +33,8 @@ import {
 import { AIRecommendationWithRelations } from '../../lib/types'
 
 export default function AIInsightsPage() {
-  const [refreshing, setRefreshing] = useState(false)
-
-  // Use Convex query instead of fetch - using mock data for now
-  const recommendationsData = useQuery(api.dashboard.getAIRecommendations)
-  const recommendations = recommendationsData?.recommendations || []
-  const loading = recommendationsData === undefined
+  const [recommendations, setRecommendations] = useState<AIRecommendationWithRelations[]>([])
+  const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [priorityFilter, setPriorityFilter] = useState('all')
@@ -48,13 +42,21 @@ export default function AIInsightsPage() {
   const [generating, setGenerating] = useState(false)
 
   useEffect(() => {
-    // No need to fetch manually - Convex handles this
+    fetchRecommendations()
   }, [])
 
-  const handleRefresh = () => {
-    setRefreshing(true)
-    // Convex will automatically refetch data
-    setTimeout(() => setRefreshing(false), 1000)
+  const fetchRecommendations = async () => {
+    try {
+      const response = await fetch('/api/ai-recommendations')
+      if (response.ok) {
+        const data = await response.json()
+        setRecommendations(data.recommendations)
+      }
+    } catch (error) {
+      console.error('Failed to fetch recommendations:', error)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const generateNewRecommendations = async () => {
@@ -73,7 +75,7 @@ export default function AIInsightsPage() {
       if (response.ok) {
         const result = await response.json()
         alert(`Generated ${result.totalGenerated} new recommendations!`)
-        // No need to refetch manually - Convex handles this
+        fetchRecommendations()
       } else {
         const error = await response.json()
         alert(error.error || 'Failed to generate recommendations')
@@ -103,7 +105,7 @@ export default function AIInsightsPage() {
         const result = await response.json()
         const successCount = result.executionResults.filter((r: any) => r.success).length
         alert(`Recommendation executed! ${successCount} actions completed successfully.`)
-        // No need to refetch manually - Convex handles this
+        fetchRecommendations()
       } else {
         const error = await response.json()
         alert(error.error || 'Failed to execute recommendation')
@@ -130,7 +132,7 @@ export default function AIInsightsPage() {
       })
 
       if (response.ok) {
-        // No need to refetch manually - Convex handles this
+        fetchRecommendations()
       } else {
         const error = await response.json()
         alert(error.error || 'Failed to dismiss recommendation')

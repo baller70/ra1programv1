@@ -58,6 +58,7 @@ import {
 import Link from 'next/link'
 import { PaymentWithRelations, PaymentStats, PaymentAnalytics } from '../../lib/types'
 import { toast } from '../../components/ui/use-toast'
+import { ParentCreationModal } from '../../components/ui/parent-creation-modal'
 
 // Program configuration
 const PROGRAMS = [
@@ -82,13 +83,19 @@ export default function PaymentsPage() {
   
   const paymentsData = useQuery(api.payments.getPayments, { 
     program: activeProgram, 
-    latestOnly: true 
+    latestOnly: false,
+    limit: 100
   })
   const analytics = useQuery(api.payments.getPaymentAnalytics, {
     program: activeProgram,
-    latestOnly: true
+    latestOnly: false
   })
   const teamsData = useQuery(api.teams.getTeams, { includeParents: true })
+  
+  // Fetch all parents using Convex to mirror the parents page
+  const allParentsData = useQuery(api.parents.getParents, {
+    limit: 100 // Get all parents
+  })
   
   const [selectedTeam, setSelectedTeam] = useState<string>('all')
   const [loading, setLoading] = useState(false)
@@ -104,40 +111,26 @@ export default function PaymentsPage() {
   const [editingTeam, setEditingTeam] = useState<any>(null)
   const [teamForm, setTeamForm] = useState({ name: '', description: '', color: '#f97316' })
   const [showParentAssignDialog, setShowParentAssignDialog] = useState(false)
-  const [allParents, setAllParents] = useState<any[]>([])
   const [selectedParents, setSelectedParents] = useState<string[]>([])
   const [assignToTeamId, setAssignToTeamId] = useState<string>('')
   const [collapsedTeams, setCollapsedTeams] = useState<Set<string>>(new Set())
+  const [showParentCreationModal, setShowParentCreationModal] = useState(false)
   
   const payments = paymentsData?.payments || []
   const teams = teamsData || []
+  const allParents = allParentsData?.parents || []
 
   useEffect(() => {
-    if (paymentsData === undefined || analytics === undefined || teamsData === undefined) {
+    if (paymentsData === undefined || analytics === undefined || teamsData === undefined || allParentsData === undefined) {
       setLoading(true)
     } else {
       setLoading(false)
     }
-  }, [paymentsData, analytics, teamsData, statusFilter, activeProgram, selectedTeam])
+  }, [paymentsData, analytics, teamsData, allParentsData, statusFilter, activeProgram, selectedTeam])
 
-
-  const fetchAllParents = async () => {
-    try {
-      const response = await fetch('/api/parents')
-      if (response.ok) {
-        const data = await response.json()
-        // API returns { parents: [...], pagination: {...} }
-        const parents = data.parents || []
-        setAllParents(Array.isArray(parents) ? parents : [])
-      } else {
-        console.error('Failed to fetch parents:', response.status)
-        setAllParents([])
-      }
-    } catch (error) {
-      console.error('Error fetching parents:', error)
-      setAllParents([])
-    }
-  }
+  const assignParentsToTeam = useMutation(api.teams.assignParentsToTeam)
+  const createTeam = useMutation(api.teams.createTeam)
+  const updateTeam = useMutation(api.teams.updateTeam)
 
   const handleAssignParents = async () => {
     if (!assignToTeamId || selectedParents.length === 0) {
@@ -146,20 +139,16 @@ export default function PaymentsPage() {
     }
 
     try {
-      const response = await fetch('/api/teams/assign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          teamId: assignToTeamId,
-          parentIds: selectedParents
-        })
+      const result = await assignParentsToTeam({
+        teamId: assignToTeamId === 'unassigned' ? undefined : assignToTeamId as any,
+        parentIds: selectedParents as any[]
       })
 
-      if (response.ok) {
+      if (result.success) {
         setShowParentAssignDialog(false)
         setSelectedParents([])
         setAssignToTeamId('')
-        alert(`Successfully assigned ${selectedParents.length} parent(s) to team`)
+        alert(`Successfully assigned ${result.assignedCount} parent(s) to team`)
       } else {
         alert('Failed to assign parents to team')
       }
@@ -170,7 +159,7 @@ export default function PaymentsPage() {
   }
 
   const openParentAssignDialog = () => {
-    fetchAllParents()
+    // fetchAllParents() // This function is no longer needed as allParents is fetched directly
     setShowParentAssignDialog(true)
   }
 
@@ -188,27 +177,18 @@ export default function PaymentsPage() {
 
   const handleCreateTeam = async () => {
     try {
-      const response = await fetch('/api/teams', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(teamForm)
+      await createTeam({
+        name: teamForm.name,
+        description: teamForm.description,
+        color: teamForm.color
       })
-
-      if (response.ok) {
-        setShowTeamDialog(false)
-        setTeamForm({ name: '', description: '', color: '#f97316' })
-        toast({
-          title: "Success",
-          description: "Team created successfully"
-        })
-      } else {
-        const error = await response.json()
-        toast({
-          title: "Error",
-          description: error.error || "Failed to create team",
-          variant: "destructive"
-        })
-      }
+      
+      setShowTeamDialog(false)
+      setTeamForm({ name: '', description: '', color: '#f97316' })
+      toast({
+        title: "Success",
+        description: "Team created successfully"
+      })
     } catch (error) {
       console.error('Error creating team:', error)
       toast({
@@ -231,28 +211,20 @@ export default function PaymentsPage() {
 
   const handleUpdateTeam = async () => {
     try {
-      const response = await fetch('/api/teams', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: editingTeam.id, ...teamForm })
+      await updateTeam({
+        teamId: editingTeam._id,
+        name: teamForm.name,
+        description: teamForm.description,
+        color: teamForm.color
       })
-
-      if (response.ok) {
-        setShowTeamDialog(false)
-        setEditingTeam(null)
-        setTeamForm({ name: '', description: '', color: '#f97316' })
-        toast({
-          title: "Success",
-          description: "Team updated successfully"
-        })
-      } else {
-        const error = await response.json()
-        toast({
-          title: "Error",
-          description: error.error || "Failed to update team",
-          variant: "destructive"
-        })
-      }
+      
+      setShowTeamDialog(false)
+      setEditingTeam(null)
+      setTeamForm({ name: '', description: '', color: '#f97316' })
+      toast({
+        title: "Success",
+        description: "Team updated successfully"
+      })
     } catch (error) {
       console.error('Error updating team:', error)
       toast({
@@ -298,22 +270,82 @@ export default function PaymentsPage() {
 
 
   const filteredPayments = payments.filter(payment => {
+    // Search filter
     const matchesSearch = (payment.parentName || payment.parent?.name || '')?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          (payment.parentEmail || payment.parent?.email || '')?.toLowerCase().includes(searchTerm.toLowerCase())
-    return searchTerm ? matchesSearch : true
+    const searchMatch = searchTerm ? matchesSearch : true
+    
+    // Team filter
+    if (selectedTeam === 'all') {
+      return searchMatch
+    }
+    
+    const parent = allParents.find(p => p._id === payment.parentId)
+    if (selectedTeam === 'unassigned') {
+      return searchMatch && !parent?.teamId
+    }
+    
+    return searchMatch && parent?.teamId === selectedTeam
   })
+
+  // Enhance payments with parent data from the database
+      const enhancedPayments = filteredPayments.map(payment => {
+      // Find matching parent from allParents
+      const dbParent = allParents.find(parent => 
+        parent._id === payment.parentId || 
+        parent.email === payment.parentEmail ||
+        parent.name === payment.parentName
+      );
+    
+    if (dbParent) {
+      return {
+        ...payment,
+        parentName: dbParent.name,
+        parentEmail: dbParent.email,
+        parent: {
+          ...payment.parent,
+          name: dbParent.name,
+          email: dbParent.email,
+          phone: dbParent.phone,
+          status: dbParent.status
+        }
+      };
+    }
+    
+    return payment;
+  });
+
+  // Deduplicate payments to show only the most recent payment per parent
+  const deduplicatedPayments = enhancedPayments.reduce((unique: any[], payment) => {
+    const existingIndex = unique.findIndex(p => p.parentId === payment.parentId)
+    if (existingIndex === -1) {
+      unique.push(payment)
+    } else {
+      // Keep the more recent payment (higher createdAt timestamp)
+      const currentCreatedAt = payment.createdAt || payment._creationTime || 0
+      const existingCreatedAt = unique[existingIndex].createdAt || unique[existingIndex]._creationTime || 0
+      if (currentCreatedAt > existingCreatedAt) {
+        unique[existingIndex] = payment
+      }
+    }
+    return unique
+  }, [])
 
   // Group payments by team if enabled
   const groupedPayments = groupByTeam ? 
-    filteredPayments.reduce((groups: Record<string, any[]>, payment) => {
-      const teamKey = 'Unassigned' // For now, since we don't have team assignments in Convex yet
+    deduplicatedPayments.reduce((groups: Record<string, any[]>, payment) => {
+      // Find the parent's team from allParents data
+      const parent = allParents.find(p => p._id === payment.parentId)
+      const team = teams.find(t => t._id === parent?.teamId)
+      const teamKey = team ? team.name : 'Unassigned'
+      
       if (!groups[teamKey]) {
         groups[teamKey] = []
       }
       groups[teamKey].push(payment)
       return groups
     }, {}) : 
-    { 'All Payments': filteredPayments }
+    { 'All Payments': deduplicatedPayments }
 
   const handlePaymentSelection = (paymentId: string, selected: boolean) => {
     if (selected) {
@@ -324,7 +356,7 @@ export default function PaymentsPage() {
   }
 
   const selectAllPayments = () => {
-    setSelectedPayments(filteredPayments.map(p => p._id))
+    setSelectedPayments(deduplicatedPayments.map(p => p._id))
   }
 
   const clearSelection = () => {
@@ -406,15 +438,53 @@ export default function PaymentsPage() {
   }
 
   const calculateSummary = () => {
-    const total = filteredPayments.reduce((sum, payment) => sum + Number(payment.amount), 0)
-    const paid = filteredPayments.filter(p => p.status === 'paid').reduce((sum, payment) => sum + Number(payment.amount), 0)
-    const pending = filteredPayments.filter(p => p.status === 'pending').reduce((sum, payment) => sum + Number(payment.amount), 0)
-    const overdue = filteredPayments.filter(p => p.status === 'overdue').reduce((sum, payment) => sum + Number(payment.amount), 0)
+    const now = Date.now()
+    
+    const total = deduplicatedPayments.reduce((sum, payment) => sum + Number(payment.amount), 0)
+    const paid = deduplicatedPayments.filter(p => p.status === 'paid').reduce((sum, payment) => sum + Number(payment.amount), 0)
+    const pending = deduplicatedPayments.filter(p => p.status === 'pending').reduce((sum, payment) => sum + Number(payment.amount), 0)
+    
+    // Use consistent overdue logic: status='overdue' OR (status='pending' AND past due date)
+    const overdue = deduplicatedPayments.filter(payment => {
+      if (payment.status === 'overdue') {
+        return true
+      }
+      if (payment.status === 'pending' && payment.dueDate && payment.dueDate < now) {
+        return true
+      }
+      return false
+    }).reduce((sum, payment) => sum + Number(payment.amount), 0)
 
     return { total, paid, pending, overdue }
   }
 
   const summary = calculateSummary()
+
+  // Helper function to get consistent overdue count
+  const getOverdueCount = () => {
+    const now = Date.now()
+    return deduplicatedPayments.filter(payment => {
+      if (payment.status === 'overdue') {
+        return true
+      }
+      if (payment.status === 'pending' && payment.dueDate && payment.dueDate < now) {
+        return true
+      }
+      return false
+    }).length
+  }
+
+  // Helper function to check if a parent has overdue payments
+  const isParentOverdue = (payment: any) => {
+    const now = Date.now()
+    if (payment.status === 'overdue') {
+      return true
+    }
+    if (payment.status === 'pending' && payment.dueDate && payment.dueDate < now) {
+      return true
+    }
+    return false
+  }
 
   // AI Functions
   const fetchAIPaymentInsights = async () => {
@@ -427,9 +497,9 @@ export default function PaymentsPage() {
         },
         body: JSON.stringify({
           paymentData: {
-            totalPayments: filteredPayments.length,
-            overdueCount: filteredPayments.filter(p => p.status === 'overdue').length,
-            pendingCount: filteredPayments.filter(p => p.status === 'pending').length,
+            totalPayments: deduplicatedPayments.length,
+            overdueCount: getOverdueCount(),
+            pendingCount: deduplicatedPayments.filter(p => p.status === 'pending').length,
             totalAmount: summary.total,
             overdueAmount: summary.overdue
           }
@@ -533,7 +603,7 @@ export default function PaymentsPage() {
             <Button asChild variant="outline">
               <Link href="/payments/overdue">
                 <AlertTriangle className="mr-2 h-4 w-4" />
-                Overdue ({Math.floor((analytics?.overduePayments || 0) / 100) || 0})
+                Overdue ({analytics?.overdueCount || getOverdueCount()})
               </Link>
             </Button>
             <Button asChild variant="outline">
@@ -541,6 +611,13 @@ export default function PaymentsPage() {
                 <Calendar className="mr-2 h-4 w-4" />
                 Payment Plans
               </Link>
+            </Button>
+            <Button 
+              onClick={() => setShowParentCreationModal(true)}
+              variant="outline"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Create Parent
             </Button>
             <Button asChild>
               <Link href="/payment-plans/new">
@@ -850,12 +927,17 @@ export default function PaymentsPage() {
                 className="px-3 py-2 border border-input rounded-md bg-background"
               >
                 <option value="all">All Teams</option>
-                <option value="unassigned">Unassigned</option>
-                {teams.map((team) => (
-                  <option key={team._id} value={team._id}>
-                    {team.name} (0)
-                  </option>
-                ))}
+                <option value="unassigned">
+                  Unassigned ({allParents.filter(p => !p.teamId).length})
+                </option>
+                {teams.map((team) => {
+                  const teamParentCount = allParents.filter(p => p.teamId === team._id).length
+                  return (
+                    <option key={team._id} value={team._id}>
+                      {team.name} ({teamParentCount})
+                    </option>
+                  )
+                })}
               </select>
               <select
                 value={statusFilter}
@@ -961,27 +1043,30 @@ export default function PaymentsPage() {
                         
                         {teams.length > 0 && (
                           <div className="flex items-center space-x-1">
-                            {teams.slice(0, 3).map((team) => (
-                              <div
-                                key={team._id}
-                                className="flex items-center space-x-1 text-xs bg-muted px-2 py-1 rounded"
-                              >
+                            {teams.slice(0, 3).map((team) => {
+                              const teamParentCount = allParents.filter(p => p.teamId === team._id).length
+                              return (
                                 <div
-                                  className="w-3 h-3 rounded-full"
-                                  style={{ backgroundColor: team.color || '#f97316' }}
-                                />
-                                <span>{team.name}</span>
-                                <span className="text-muted-foreground">(0)</span>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-4 w-4 p-0 ml-1"
-                                  onClick={() => handleEditTeam(team)}
+                                  key={team._id}
+                                  className="flex items-center space-x-1 text-xs bg-muted px-2 py-1 rounded"
                                 >
-                                  <Edit className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            ))}
+                                  <div
+                                    className="w-3 h-3 rounded-full"
+                                    style={{ backgroundColor: team.color || '#f97316' }}
+                                  />
+                                  <span>{team.name}</span>
+                                  <span className="text-muted-foreground">({teamParentCount})</span>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-4 w-4 p-0 ml-1"
+                                    onClick={() => handleEditTeam(team)}
+                                  >
+                                    <Edit className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              )
+                            })}
                             {teams.length > 3 && (
                               <span className="text-xs text-muted-foreground">+{teams.length - 3} more</span>
                             )}
@@ -1074,7 +1159,14 @@ export default function PaymentsPage() {
                                 )}
                               </div>
                               <div>
-                                <p className="font-medium">{payment.parentName || payment.parent?.name || 'Unknown Parent'}</p>
+                                <div className="flex items-center space-x-2">
+                                  <p className="font-medium">{payment.parentName || payment.parent?.name || 'Unknown Parent'}</p>
+                                  {isParentOverdue(payment) && (
+                                    <Badge variant="destructive" className="text-xs font-bold">
+                                      OVERDUE
+                                    </Badge>
+                                  )}
+                                </div>
                                 <p className="text-sm text-muted-foreground">{payment.parentEmail || payment.parent?.email || 'No email'}</p>
                                 <div className="flex items-center space-x-2 mt-1">
                                   <Badge variant="secondary" className="text-xs">
@@ -1165,18 +1257,30 @@ export default function PaymentsPage() {
                   <SelectValue placeholder="Choose a team..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {teams.map((team) => (
-                    <SelectItem key={team._id} value={team._id}>
-                      <div className="flex items-center space-x-2">
-                        <div
-                          className="w-3 h-3 rounded-full"
-                          style={{ backgroundColor: team.color || '#f97316' }}
-                        />
-                        <span>{team.name}</span>
-                        <span className="text-muted-foreground">(0 parents)</span>
-                      </div>
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="unassigned">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-3 h-3 rounded-full bg-gray-400" />
+                      <span>Unassigned</span>
+                      <span className="text-muted-foreground">
+                        ({allParents.filter(p => !p.teamId).length} parents)
+                      </span>
+                    </div>
+                  </SelectItem>
+                  {teams.map((team) => {
+                    const teamParentCount = allParents.filter(p => p.teamId === team._id).length
+                    return (
+                      <SelectItem key={team._id} value={team._id}>
+                        <div className="flex items-center space-x-2">
+                          <div
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: team.color || '#f97316' }}
+                          />
+                          <span>{team.name}</span>
+                          <span className="text-muted-foreground">({teamParentCount} parents)</span>
+                        </div>
+                      </SelectItem>
+                    )
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -1187,23 +1291,23 @@ export default function PaymentsPage() {
                 <div className="space-y-2">
                   {Array.isArray(allParents) && allParents.length > 0 ? (
                     allParents.map((parent) => (
-                      <div key={parent.id} className="flex items-center space-x-3 p-2 hover:bg-muted rounded">
+                      <div key={parent._id} className="flex items-center space-x-3 p-2 hover:bg-muted rounded">
                         <Checkbox
-                          checked={selectedParents.includes(parent.id)}
+                          checked={selectedParents.includes(parent._id)}
                           onCheckedChange={(checked) => {
                             if (checked) {
-                              setSelectedParents([...selectedParents, parent.id])
+                              setSelectedParents([...selectedParents, parent._id])
                             } else {
-                              setSelectedParents(selectedParents.filter(id => id !== parent.id))
+                              setSelectedParents(selectedParents.filter(id => id !== parent._id))
                             }
                           }}
                         />
                         <div className="flex-1">
                           <div className="font-medium">{parent.name}</div>
                           <div className="text-sm text-muted-foreground">{parent.email}</div>
-                          {parent.team && (
+                          {parent.teamId && (
                             <div className="text-xs text-muted-foreground">
-                              Currently in: {parent.team.name}
+                              Team ID: {parent.teamId}
                             </div>
                           )}
                         </div>
@@ -1238,6 +1342,17 @@ export default function PaymentsPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Parent Creation Modal */}
+      <ParentCreationModal
+        open={showParentCreationModal}
+        onOpenChange={setShowParentCreationModal}
+        onParentCreated={(newParent) => {
+          // Add the new parent to the current list immediately
+          // setAllParentsFromDB(prev => [...prev, newParent]) // This line is no longer needed
+          // No need to reload the page - the enhanced payments will automatically show the new parent data
+        }}
+      />
     </div>
   </AppLayout>
   )

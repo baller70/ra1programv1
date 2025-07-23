@@ -37,6 +37,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { ParentWithRelations } from '../../lib/types'
+import { ParentCreationModal } from '../../components/ui/parent-creation-modal'
 
 export default function ParentsPage() {
   const { toast } = useToast()
@@ -67,6 +68,7 @@ export default function ParentsPage() {
   
   const [showGeneralMessagesDialog, setShowGeneralMessagesDialog] = useState(false)
   const [generalMessagesResults, setGeneralMessagesResults] = useState<any[]>([])
+  const [showParentCreationModal, setShowParentCreationModal] = useState(false)
 
   useEffect(() => {
     const fetchParents = async () => {
@@ -597,11 +599,9 @@ export default function ParentsPage() {
                 Import Parents
               </Link>
             </Button>
-            <Button asChild>
-              <Link href="/parents/new">
-                <Plus className="mr-2 h-4 w-4" />
-                Add Parent
-              </Link>
+            <Button onClick={() => setShowParentCreationModal(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Parent
             </Button>
           </div>
         </div>
@@ -1014,12 +1014,12 @@ export default function ParentsPage() {
                       
                       <div className="flex items-center space-x-2">
                         <Button asChild variant="outline" size="sm">
-                          <Link href={`/parents/${parent.id}`}>
+                          <Link href={`/parents/${parent._id}`}>
                             <Eye className="h-4 w-4" />
                           </Link>
                         </Button>
                         <Button asChild variant="outline" size="sm">
-                          <Link href={`/parents/${parent.id}/edit`}>
+                          <Link href={`/parents/${parent._id}/edit`}>
                             <Edit className="h-4 w-4" />
                           </Link>
                         </Button>
@@ -1553,6 +1553,16 @@ export default function ParentsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Parent Creation Modal */}
+      <ParentCreationModal
+        open={showParentCreationModal}
+        onOpenChange={setShowParentCreationModal}
+        onParentCreated={(newParent) => {
+          // Add the new parent to the current list and refresh
+          setParents(prev => [...prev, newParent])
+        }}
+      />
     </AppLayout>
   )
 }

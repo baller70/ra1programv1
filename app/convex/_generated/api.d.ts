@@ -15,10 +15,8 @@ import type {
 } from "convex/server";
 import type * as contracts from "../contracts.js";
 import type * as dashboard from "../dashboard.js";
-import type * as messageLogs from "../messageLogs.js";
 import type * as migrations from "../migrations.js";
 import type * as parents from "../parents.js";
-import type * as paymentPlans from "../paymentPlans.js";
 import type * as payments from "../payments.js";
 import type * as teams from "../teams.js";
 import type * as templates from "../templates.js";
@@ -34,10 +32,8 @@ import type * as templates from "../templates.js";
 declare const fullApi: ApiFromModules<{
   contracts: typeof contracts;
   dashboard: typeof dashboard;
-  messageLogs: typeof messageLogs;
   migrations: typeof migrations;
   parents: typeof parents;
-  paymentPlans: typeof paymentPlans;
   payments: typeof payments;
   teams: typeof teams;
   templates: typeof templates;

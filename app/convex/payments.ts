@@ -160,9 +160,20 @@ export const getPaymentAnalytics = query({
       .filter((p) => p.status === "pending")
       .reduce((sum, p) => sum + (p.amount || 0), 0);
 
-    const overduePayments = payments
-      .filter((p) => p.status === "overdue")
-      .reduce((sum, p) => sum + (p.amount || 0), 0);
+    // Calculate overdue payments using consistent logic (amount and count)
+    const now = Date.now();
+    const overduePaymentsList = payments.filter(payment => {
+      if (payment.status === 'overdue') {
+        return true;
+      }
+      if (payment.status === 'pending' && payment.dueDate && payment.dueDate < now) {
+        return true;
+      }
+      return false;
+    });
+    
+    const overduePayments = overduePaymentsList.reduce((sum, p) => sum + (p.amount || 0), 0);
+    const overdueCount = overduePaymentsList.length;
 
     const activePlans = await ctx.db
       .query("paymentPlans")
@@ -174,6 +185,7 @@ export const getPaymentAnalytics = query({
       collectedPayments,
       pendingPayments,
       overduePayments,
+      overdueCount,
       activePlans: activePlans.length,
       avgPaymentTime: 3,
     };
@@ -183,10 +195,13 @@ export const getPaymentAnalytics = query({
 export const createPayment = mutation({
   args: {
     parentId: v.id("parents"),
-    paymentPlanId: v.optional(v.id("paymentPlans")),
     amount: v.number(),
     dueDate: v.number(),
-    notes: v.optional(v.string()),
+    status: v.string(),
+    paymentPlanId: v.optional(v.id("paymentPlans")),
+    subscriptionId: v.optional(v.string()),
+    installmentNumber: v.optional(v.number()),
+    totalInstallments: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -196,14 +211,14 @@ export const createPayment = mutation({
       paymentPlanId: args.paymentPlanId,
       dueDate: args.dueDate,
       amount: args.amount,
-      status: "pending",
+      status: args.status,
       stripeInvoiceId: undefined,
       stripePaymentId: undefined,
       paidAt: undefined,
       failureReason: undefined,
       remindersSent: 0,
       lastReminderSent: undefined,
-      notes: args.notes,
+      notes: undefined,
       createdAt: now,
       updatedAt: now,
     });
@@ -368,5 +383,147 @@ export const debugPaymentData = query({
         email: p.email
       }))
     };
+  },
+});
+
+// Get overdue payments with consistent logic across all pages
+export const getOverduePayments = query({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const payments = await ctx.db.query("payments").collect();
+    
+    // Get payments that are either:
+    // 1. Already marked as 'overdue' 
+    // 2. 'pending' but past their due date
+    const overduePayments = payments.filter(payment => {
+      if (payment.status === 'overdue') {
+        return true;
+      }
+      if (payment.status === 'pending' && payment.dueDate && payment.dueDate < now) {
+        return true;
+      }
+      return false;
+    });
+
+    // Enrich with parent data
+    const enrichedOverduePayments = await Promise.all(
+      overduePayments.map(async (payment) => {
+        let parent = null;
+        try {
+          if (payment.parentId && typeof payment.parentId === 'string' && payment.parentId.length >= 25) {
+            parent = await ctx.db.get(payment.parentId as Id<"parents">);
+          }
+        } catch (error) {
+          console.log('Could not fetch parent for overdue payment:', payment._id);
+        }
+
+        // Calculate days past due
+        const daysPastDue = payment.dueDate 
+          ? Math.max(0, Math.floor((now - payment.dueDate) / (1000 * 60 * 60 * 24)))
+          : 0;
+
+        return {
+          ...payment,
+          parent,
+          parentName: parent?.name || 'Unknown Parent',
+          parentEmail: parent?.email || 'No email',
+          daysPastDue
+        };
+      })
+    );
+
+    // Sort by due date (oldest first)
+    return enrichedOverduePayments.sort((a, b) => (a.dueDate || 0) - (b.dueDate || 0));
+  },
+});
+
+// Get count of overdue payments (for consistent use across dashboard and other pages)
+export const getOverduePaymentsCount = query({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const payments = await ctx.db.query("payments").collect();
+    
+    // Count payments that are either:
+    // 1. Already marked as 'overdue' 
+    // 2. 'pending' but past their due date
+    const overdueCount = payments.filter(payment => {
+      if (payment.status === 'overdue') {
+        return true;
+      }
+      if (payment.status === 'pending' && payment.dueDate && payment.dueDate < now) {
+        return true;
+      }
+      return false;
+    }).length;
+
+    return overdueCount;
+  },
+});
+
+// Delete payments with invalid parent IDs (cleanup function)
+export const deletePaymentsWithInvalidParentIds = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const payments = await ctx.db.query("payments").collect();
+    const deletedPayments = [];
+    
+    for (const payment of payments) {
+      // Check if parent ID is in old Prisma format (starts with "cmd")
+      if (payment.parentId && typeof payment.parentId === 'string' && payment.parentId.startsWith('cmd')) {
+        try {
+          await ctx.db.delete(payment._id);
+          deletedPayments.push({
+            id: payment._id,
+            parentId: payment.parentId,
+            amount: payment.amount,
+            status: payment.status
+          });
+        } catch (error) {
+          console.log('Could not delete payment:', payment._id, error);
+        }
+      }
+    }
+    
+    return {
+      deletedCount: deletedPayments.length,
+      deletedPayments
+    };
+  },
+});
+
+export const createPaymentRecord = mutation({
+  args: {
+    parentId: v.id("parents"),
+    amount: v.number(),
+    dueDate: v.number(),
+    status: v.string(),
+    paymentPlanId: v.optional(v.id("paymentPlans")),
+    subscriptionId: v.optional(v.string()),
+    installmentNumber: v.optional(v.number()),
+    totalInstallments: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+
+    const paymentId = await ctx.db.insert("payments", {
+      parentId: args.parentId,
+      paymentPlanId: args.paymentPlanId,
+      dueDate: args.dueDate,
+      amount: args.amount,
+      status: args.status,
+      stripeInvoiceId: undefined,
+      stripePaymentId: undefined,
+      paidAt: undefined,
+      failureReason: undefined,
+      remindersSent: 0,
+      lastReminderSent: undefined,
+      notes: undefined,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    return paymentId;
   },
 });

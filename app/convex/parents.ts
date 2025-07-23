@@ -94,6 +94,7 @@ export const updateParent = mutation({
     email: v.optional(v.string()),
     phone: v.optional(v.string()),
     status: v.optional(v.string()),
+    stripeCustomerId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { id, ...updates } = args;

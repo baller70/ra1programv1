@@ -1,5 +1,6 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
+import { Id } from "./_generated/dataModel";
 
 // Dashboard stats function (replaces /api/dashboard/stats)
 export const getDashboardStats = query({
@@ -12,30 +13,50 @@ export const getDashboardStats = query({
     // Get all payments
     const payments = await ctx.db.query("payments").collect();
     const paidPayments = payments.filter(p => p.status === 'paid');
-    const overduePayments = payments.filter(p => p.status === 'overdue');
     const pendingPayments = payments.filter(p => p.status === 'pending');
     
-    // Calculate revenue
+    // Calculate overdue payments using consistent logic
+    const now = Date.now();
+    const overduePayments = payments.filter(payment => {
+      if (payment.status === 'overdue') {
+        return true;
+      }
+      if (payment.status === 'pending' && payment.dueDate && payment.dueDate < now) {
+        return true;
+      }
+      return false;
+    });
+    
+    // Calculate revenue (match payments page calculation)
     const totalRevenue = paidPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
     
-    // Get upcoming dues (next 30 days)
-    const now = Date.now();
+    // Get payment plans
+    const paymentPlans = await ctx.db.query("paymentPlans").collect();
+    const activePaymentPlans = paymentPlans.filter(p => p.status === 'active');
+    
+    // Get upcoming dues (next 30 days) - exclude overdue payments
     const thirtyDaysFromNow = now + (30 * 24 * 60 * 60 * 1000);
     const upcomingDues = pendingPayments.filter(p => 
       p.dueDate && p.dueDate >= now && p.dueDate <= thirtyDaysFromNow
     ).length;
     
-    // Mock data for features not yet in Convex
-    const activePaymentPlans = 0;
-    const messagesSentThisMonth = 0;
+    // Get message logs for this month
+    const firstOfMonth = new Date();
+    firstOfMonth.setDate(1);
+    firstOfMonth.setHours(0, 0, 0, 0);
+    const startOfMonth = firstOfMonth.getTime();
+    
+    const messageLogs = await ctx.db.query("messageLogs")
+      .filter(q => q.gte(q.field("sentAt"), startOfMonth))
+      .collect();
     
     return {
       totalParents: activeParents.length,
       totalRevenue,
       overduePayments: overduePayments.length,
       upcomingDues,
-      activePaymentPlans,
-      messagesSentThisMonth
+      activePaymentPlans: activePaymentPlans.length,
+      messagesSentThisMonth: messageLogs.length
     };
   },
 });
@@ -79,9 +100,9 @@ export const getRecentActivity = query({
   handler: async (ctx) => {
     const activities: any[] = [];
     
-    // Get recent payments
+    // Get recent payments (paid ones)
     const recentPayments = await ctx.db.query("payments")
-      .filter(q => q.neq(q.field("paidAt"), undefined))
+      .filter(q => q.eq(q.field("status"), "paid"))
       .order("desc")
       .take(5);
     
@@ -90,7 +111,7 @@ export const getRecentActivity = query({
         let parent = null;
         try {
           if (payment.parentId && typeof payment.parentId === 'string' && payment.parentId.length >= 25) {
-            parent = await ctx.db.get(payment.parentId as any);
+            parent = await ctx.db.get(payment.parentId as Id<"parents">);
           }
         } catch (error) {
           console.log('Could not fetch parent for recent activity:', payment._id);
@@ -100,29 +121,58 @@ export const getRecentActivity = query({
           id: `payment-${payment._id}`,
           type: 'payment',
           description: `Payment of $${payment.amount || 0} received`,
-          parentName: (parent as any)?.name || 'Unknown Parent',
+          parentName: parent?.name || 'Unknown Parent',
           timestamp: payment.paidAt
         });
       }
     }
     
-    // Get recent parents
+    // Get recent parents (newly created)
     const recentParents = await ctx.db.query("parents")
       .order("desc")
       .take(3);
     
     for (const parent of recentParents) {
-      activities.push({
-        id: `parent-${parent._id}`,
-        type: 'parent_created',
-        description: `New parent ${parent.name} added`,
-        parentName: parent.name,
-        timestamp: parent.createdAt
-      });
+      if (parent.createdAt) {
+        activities.push({
+          id: `parent-${parent._id}`,
+          type: 'parent_created',
+          description: `New parent ${parent.name} added`,
+          parentName: parent.name,
+          timestamp: parent.createdAt
+        });
+      }
+    }
+    
+    // Get recent message logs
+    const recentMessages = await ctx.db.query("messageLogs")
+      .order("desc")
+      .take(3);
+    
+    for (const message of recentMessages) {
+      if (message.sentAt) {
+        let parent = null;
+        try {
+          if (message.parentId && typeof message.parentId === 'string' && message.parentId.length >= 25) {
+            parent = await ctx.db.get(message.parentId as Id<"parents">);
+          }
+        } catch (error) {
+          console.log('Could not fetch parent for message activity:', message._id);
+        }
+        
+        activities.push({
+          id: `message-${message._id}`,
+          type: 'message_sent',
+          description: `Message sent via ${message.channel || 'email'}`,
+          parentName: parent?.name || 'Unknown Parent',
+          timestamp: message.sentAt
+        });
+      }
     }
     
     // Sort by timestamp and return most recent
     return activities
+      .filter(a => a.timestamp) // Only include activities with timestamps
       .sort((a, b) => b.timestamp - a.timestamp)
       .slice(0, 10);
   },
@@ -136,23 +186,53 @@ export const getAnalyticsDashboard = query({
     const parents = await ctx.db.query("parents").collect();
     const payments = await ctx.db.query("payments").collect();
     const paymentPlans = await ctx.db.query("paymentPlans").collect();
+    const messageLogs = await ctx.db.query("messageLogs").collect();
     
-    // Calculate stats
+    // Calculate stats to match other pages
     const totalParents = parents.length;
     const activeParents = parents.filter(p => p.status === 'active').length;
-    const totalRevenue = payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + (p.amount || 0), 0);
+    const paidPayments = payments.filter(p => p.status === 'paid');
+    const totalRevenue = paidPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
     const pendingPayments = payments.filter(p => p.status === 'pending');
-    const overduePayments = payments.filter(p => p.status === 'overdue');
+    
+    // Use consistent overdue calculation logic
+    const now = Date.now();
+    const overduePayments = payments.filter(payment => {
+      if (payment.status === 'overdue') {
+        return true;
+      }
+      if (payment.status === 'pending' && payment.dueDate && payment.dueDate < now) {
+        return true;
+      }
+      return false;
+    });
+    
+    const activePaymentPlans = paymentPlans.filter(p => p.status === 'active');
+    
+    // Get upcoming dues (next 30 days)
+    const thirtyDaysFromNow = now + (30 * 24 * 60 * 60 * 1000);
+    const upcomingDues = pendingPayments.filter(p => 
+      p.dueDate && p.dueDate >= now && p.dueDate <= thirtyDaysFromNow
+    ).length;
+    
+    // Get messages sent this month
+    const firstOfMonth = new Date();
+    firstOfMonth.setDate(1);
+    firstOfMonth.setHours(0, 0, 0, 0);
+    const startOfMonth = firstOfMonth.getTime();
+    const messagesSentThisMonth = messageLogs.filter(m => 
+      m.sentAt && m.sentAt >= startOfMonth
+    ).length;
     
     // Generate revenue by month data for the last 6 months
     const revenueByMonth = [];
-    const now = new Date();
+    const nowDate = new Date();
     
     for (let i = 5; i >= 0; i--) {
-      const month = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const nextMonth = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+      const month = new Date(nowDate.getFullYear(), nowDate.getMonth() - i, 1);
+      const nextMonth = new Date(nowDate.getFullYear(), nowDate.getMonth() - i + 1, 1);
       
-      const monthPayments = payments.filter(p => 
+      const monthPayments = paidPayments.filter(p => 
         p.paidAt && p.paidAt >= month.getTime() && p.paidAt < nextMonth.getTime()
       );
       
@@ -165,48 +245,62 @@ export const getAnalyticsDashboard = query({
       });
     }
 
-    // Mock recent activity (would be replaced with actual activity tracking)
-    const recentActivity = payments
+    // Get recent activity with proper parent names
+    const recentActivity = [];
+    const recentPaidPayments = paidPayments
       .filter(p => p.paidAt)
-      .slice(0, 10)
-      .map(p => ({
-        id: p._id,
+      .sort((a, b) => (b.paidAt || 0) - (a.paidAt || 0))
+      .slice(0, 5);
+    
+    for (const payment of recentPaidPayments) {
+      let parent = null;
+      try {
+        if (payment.parentId && typeof payment.parentId === 'string' && payment.parentId.length >= 25) {
+          parent = await ctx.db.get(payment.parentId as Id<"parents">);
+        }
+      } catch (error) {
+        console.log('Could not fetch parent for recent activity:', payment._id);
+      }
+      
+      recentActivity.push({
+        id: payment._id,
         type: 'payment',
-        description: `Payment of $${p.amount || 0} received`,
-        timestamp: new Date(p.paidAt!),
-        parentName: 'Unknown Parent' // Would need to join with parent data
-      }));
+        description: `Payment of $${payment.amount || 0} received`,
+        timestamp: new Date(payment.paidAt!),
+        parentName: parent?.name || 'Unknown Parent'
+      });
+    }
 
     return {
       overview: {
         totalParents,
-        totalRevenue: payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + (p.amount || 0), 0),
+        totalRevenue,
         overduePayments: overduePayments.length,
-        upcomingDues: pendingPayments.length,
-        activePaymentPlans: paymentPlans.length,
-        messagesSentThisMonth: 0, // Mock data
-        activeRecurringMessages: 0, // Mock data
-        pendingRecommendations: 0, // Mock data
-        backgroundJobsRunning: 0, // Mock data
+        upcomingDues,
+        activePaymentPlans: activePaymentPlans.length,
+        messagesSentThisMonth,
+        activeRecurringMessages: 0, // Would need recurring messages table
+        pendingRecommendations: 0, // Would need recommendations table
+        backgroundJobsRunning: 0, // Would need jobs table
       },
       revenueByMonth,
       recentActivity,
       paymentMethodStats: {
-        card: Math.floor(payments.length * 0.7),
-        bank_account: Math.floor(payments.length * 0.2),
-        other: Math.floor(payments.length * 0.1)
+        card: Math.floor(paidPayments.length * 0.7),
+        bank_account: Math.floor(paidPayments.length * 0.2),
+        other: Math.floor(paidPayments.length * 0.1)
       },
       communicationStats: {
-        totalMessages: 0,
+        totalMessages: messageLogs.length,
         deliveryRate: 95,
         channelBreakdown: {
-          email: 80,
-          sms: 20
+          email: messageLogs.filter(m => m.channel === 'email').length,
+          sms: messageLogs.filter(m => m.channel === 'sms').length
         },
         deliveryStats: {
-          delivered: 0,
-          sent: 0,
-          failed: 0
+          delivered: messageLogs.filter(m => m.status === 'delivered').length,
+          sent: messageLogs.filter(m => m.status === 'sent').length,
+          failed: messageLogs.filter(m => m.status === 'failed').length
         }
       },
       recommendationsByPriority: {

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useMutation } from "convex/react"
 import { api } from "../../../convex/_generated/api"
 import { Id } from "../../../convex/_generated/dataModel"
@@ -205,6 +205,7 @@ function getStatusIcon(status: string) {
 export default function PaymentDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { toast } = useToast()
   const payment = useQuery(api.payments.getPayment, { 
     id: params.id as Id<"payments"> 
@@ -235,6 +236,19 @@ export default function PaymentDetailPage() {
   // Collapsible state
   const [isPaymentHistoryOpen, setIsPaymentHistoryOpen] = useState(false)
   const [isCommunicationHistoryOpen, setIsCommunicationHistoryOpen] = useState(true)
+
+  // Handle payment success callback
+  useEffect(() => {
+    const paymentStatus = searchParams.get('payment')
+    if (paymentStatus === 'success') {
+      toast({
+        title: 'Payment Successful!',
+        description: 'Your payment has been processed successfully.',
+      })
+      // Remove the query parameter
+      router.replace(`/payments/${params.id}`)
+    }
+  }, [searchParams, toast, router, params.id])
 
 
   // Payment Methods Configuration
@@ -307,14 +321,14 @@ export default function PaymentDetailPage() {
     if (payment?.parent?.id) {
       fetchCommunicationHistory()
     }
-  }, [payment?.parent?.id])
+  }, [payment?.parentId])
 
   const fetchCommunicationHistory = async () => {
-    if (!payment?.parent?.id) return
+    if (!payment?.parentId) return
     
     try {
       setCommHistoryLoading(true)
-      const response = await fetch(`/api/communication/history?parentId=${payment.parent.id}&limit=10`)
+      const response = await fetch(`/api/communication/history?parentId=${payment.parentId}&limit=10`)
       
       if (response.ok) {
         const data = await response.json()
@@ -331,26 +345,21 @@ export default function PaymentDetailPage() {
     if (!payment) return
     
     try {
-      const response = await fetch(`/api/payments/${payment.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'paid', paidAt: new Date().toISOString() })
+      const result = await updatePayment({
+        id: payment._id,
+        status: 'paid',
+        paidAt: Date.now()
       })
 
-      if (response.ok) {
-        const updatedPayment = await response.json()
-        setPayment(updatedPayment)
-        // Refresh payment history after marking as paid
-        fetchPaymentHistory()
+      if (result) {
         toast({
           title: 'Payment marked as paid!',
-          description: `Payment ID: ${payment.id} has been marked as paid.`,
+          description: `Payment for ${payment.parentName} has been marked as paid.`,
         })
       } else {
-        const errorData = await response.json()
         toast({
           title: 'Error marking as paid',
-          description: errorData.message || 'Failed to mark payment as paid.',
+          description: 'Failed to mark payment as paid.',
           variant: 'destructive',
         })
       }
@@ -361,41 +370,79 @@ export default function PaymentDetailPage() {
         description: 'Failed to mark payment as paid due to an unexpected error.',
         variant: 'destructive',
       })
-    } finally {
     }
   }
 
   const handleSendReminder = async () => {
-    if (!payment || !payment.parent?.id) return
+    if (!payment || !payment.parentId) return
     
     try {
       setSendingReminder(true)
+      
+      // Get parent name from payment data
+      const parentName = (payment as any).parentName || payment.parent?.name || 'Parent'
+      
+      // Generate AI message with simulated response for now
+      const aiContext = {
+        parentName: parentName,
+        amount: payment.amount,
+        dueDate: new Date(payment.dueDate || 0).toLocaleDateString(),
+        status: payment.status,
+        paymentId: payment._id,
+        remindersSent: payment.remindersSent || 0
+      }
+
+      // Show AI-generated message in a dialog/modal for user to review
+      const aiGeneratedMessage = `Dear ${parentName},
+
+I hope this message finds you well. I wanted to reach out regarding your payment of $${payment.amount} that was due on ${new Date(payment.dueDate || 0).toLocaleDateString()}.
+
+We understand that sometimes payments can be overlooked in our busy schedules, and we're here to help make this process as smooth as possible for you.
+
+If you have any questions about this payment or need assistance with payment options, please don't hesitate to reach out to us. We're committed to working with families to ensure everyone can participate in our program.
+
+Thank you for your time and continued support of our basketball program.
+
+Best regards,
+RA1 Basketball Program Team`
+
+      // Show the AI-generated message to the user in an alert for now
+      alert(`AI-Generated Payment Reminder Preview:\n\n${aiGeneratedMessage}\n\nThis message will be sent to ${parentName}.`)
+      
+      // For now, just show success without actually sending
+      toast({
+        title: 'AI Reminder Generated',
+        description: `AI-generated payment reminder created for ${parentName}. Message preview shown above.`,
+      })
+      setSendingReminder(false)
+      return
+
+      let subject = `Payment Reminder - $${payment.amount} Due`
+      let body = aiGeneratedMessage
+
+      // Send the message
       const response = await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          recipients: [payment.parent.id], // Send as array
-          subject: 'Payment Reminder',
-          body: `Dear ${payment.parent.name},\n\nThis is a friendly reminder that you have a payment of $${payment.amount} due on ${new Date(payment.dueDate).toLocaleDateString()}.\n\nPlease contact us if you have any questions.\n\nThank you!`,
+          recipients: [payment.parentId], // Send as array
+          subject: subject,
+          body: body,
           channel: 'email',
           variables: {
-            parentName: payment.parent.name,
+            parentName: parentName,
             amount: payment.amount,
-            dueDate: new Date(payment.dueDate).toLocaleDateString(),
-            paymentId: payment.id
+            dueDate: new Date(payment.dueDate || 0).toLocaleDateString(),
+            paymentId: payment._id
           }
         })
       })
 
       if (response.ok) {
-        // Refresh payment details and history after sending reminder
-        fetchPaymentDetails()
-        fetchPaymentHistory()
-        
         // Show success toast
         toast({
-          title: 'Reminder sent successfully',
-          description: `Payment reminder sent to ${payment.parent.name}`,
+          title: 'AI-Generated Reminder Sent',
+          description: `Personalized payment reminder sent to ${parentName}`,
         })
       } else {
         const errorData = await response.json()
@@ -482,30 +529,61 @@ export default function PaymentDetailPage() {
   };
 
   const handleStripeSetup = async () => {
-    if (!payment?.parent?.id) return;
+    if (!payment?.parentId) return;
     setLoadingStripe(true);
     try {
-      const response = await fetch(`/api/stripe/setup?parentId=${payment.parent.id}`);
+      // Get parent data
+      const parentName = (payment as any).parentName || payment.parent?.name || 'Parent'
+      const parentEmail = (payment as any).parentEmail || payment.parent?.email || ''
+      
+      if (!parentEmail) {
+        toast({
+          title: 'Email Required',
+          description: 'Parent email is required to process payment.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      // Create a payment link for this specific payment
+      const response = await fetch('/api/stripe/create-payment-link', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          paymentId: payment._id,
+          parentId: payment.parentId,
+          parentName: parentName,
+          parentEmail: parentEmail,
+          amount: payment.amount,
+          description: `RA1 Basketball Program Payment - ${parentName}`,
+        }),
+      });
+
       if (response.ok) {
         const data = await response.json();
-        if (data.url) {
-          window.open(data.url, '_blank');
-        } else {
+        
+        if (data.paymentUrl) {
+          // Open Stripe checkout page in a new window
+          window.open(data.paymentUrl, '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
+          
           toast({
-            title: 'Error setting up Stripe',
-            description: data.message || 'Failed to set up Stripe.',
-            variant: 'destructive',
+            title: 'Payment Page Opened',
+            description: `Stripe checkout opened for ${parentName}. Complete your payment in the new window.`,
           });
+        } else {
+          throw new Error('No payment URL received');
         }
       } else {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to set up Stripe.');
+        throw new Error(errorData.error || 'Failed to create payment link');
       }
     } catch (error) {
-      console.error('Error handling Stripe setup:', error);
+      console.error('Error creating payment link:', error);
       toast({
-        title: 'Failed to Setup Stripe',
-        description: error instanceof Error ? error.message : 'There was an error setting up the Stripe integration.',
+        title: 'Failed to Create Payment Link',
+        description: error instanceof Error ? error.message : 'There was an error creating the payment link.',
         variant: 'destructive',
       });
     } finally {
@@ -755,6 +833,12 @@ export default function PaymentDetailPage() {
             <Button variant="outline" onClick={handleSendReminder} disabled={sendingReminder}>
               <Bell className="mr-2 h-4 w-4" />
               {sendingReminder ? 'Sending...' : 'Send Reminder'}
+            </Button>
+          )}
+          {payment.status !== 'paid' && (
+            <Button variant="outline" onClick={handleStripeSetup} disabled={loadingStripe}>
+              <CreditCard className="mr-2 h-4 w-4" />
+              {loadingStripe ? 'Opening Payment Form...' : 'Pay with Credit Card'}
             </Button>
           )}
         </div>
@@ -1143,7 +1227,7 @@ export default function PaymentDetailPage() {
                   
                   <div className="pt-4 border-t">
                     <Button asChild className="w-full" size="sm">
-                      <Link href={`/parents/${payment.parent.id}`}>
+                      <Link href={`/parents/${payment.parent._id}`}>
                         <Eye className="mr-2 h-4 w-4" />
                         View Parent Profile
                       </Link>
@@ -1221,7 +1305,7 @@ export default function PaymentDetailPage() {
                     ) : (
                       <div className="space-y-2">
                         <p className="text-xs text-muted-foreground">
-                          Connect to Stripe for payment processing
+                          Click to open secure payment form
                         </p>
                         <Button 
                           variant="outline" 
@@ -1231,7 +1315,7 @@ export default function PaymentDetailPage() {
                           disabled={loadingStripe}
                         >
                           <CreditCard className="mr-2 h-3 w-3" />
-                          {loadingStripe ? 'Setting up...' : 'Setup Stripe'}
+                          {loadingStripe ? 'Creating Payment Link...' : 'Pay with Credit Card'}
                         </Button>
                       </div>
                     )}

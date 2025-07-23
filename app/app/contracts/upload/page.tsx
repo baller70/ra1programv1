@@ -3,6 +3,8 @@
 
 import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { useQuery } from 'convex/react'
+import { api } from '../../../convex/_generated/api'
 import { AppLayout } from '../../../components/app-layout'
 import { Button } from '../../../components/ui/button'
 import { Input } from '../../../components/ui/input'
@@ -20,7 +22,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 
 interface Parent {
-  id: string
+  _id: string
   name: string
   email: string
 }
@@ -30,33 +32,21 @@ function ContractUploadPageContent() {
   const searchParams = useSearchParams()
   const parentId = searchParams.get('parentId')
   
-  const [parents, setParents] = useState<Parent[]>([])
+  // Use Convex query to fetch parents
+  const parentsData = useQuery(api.parents.getParents, {
+    limit: 100 // Get all parents
+  })
+  
+  const parents = parentsData?.parents || []
   const [selectedParentId, setSelectedParentId] = useState(parentId || '')
   const [file, setFile] = useState<File | null>(null)
   const [templateType, setTemplateType] = useState('')
   const [notes, setNotes] = useState('')
   const [expiresAt, setExpiresAt] = useState('')
   const [uploading, setUploading] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const loading = parentsData === undefined
 
-  useEffect(() => {
-    fetchParents()
-  }, [])
-
-  const fetchParents = async () => {
-    try {
-      const response = await fetch('/api/parents')
-      if (response.ok) {
-        const data = await response.json()
-        setParents(data)
-      }
-    } catch (error) {
-      console.error('Failed to fetch parents:', error)
-      toast.error('Failed to load parents')
-    } finally {
-      setLoading(false)
-    }
-  }
+  // No need for useEffect to fetch parents as they are fetched by the Convex query
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0]
@@ -165,7 +155,7 @@ function ContractUploadPageContent() {
                 >
                   <option value="">Select a parent...</option>
                   {parents.map((parent) => (
-                    <option key={parent.id} value={parent.id}>
+                    <option key={parent._id} value={parent._id}>
                       {parent.name} ({parent.email})
                     </option>
                   ))}

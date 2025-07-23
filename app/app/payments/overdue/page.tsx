@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useQuery } from 'convex/react'
+import { api } from '../../../convex/_generated/api'
 import { AppLayout } from '../../../components/app-layout'
 import { Button } from '../../../components/ui/button'
 import { Input } from '../../../components/ui/input'
@@ -26,45 +28,33 @@ import Link from 'next/link'
 import { PaymentWithRelations } from '../../../lib/types'
 
 type OverduePayment = {
-  id: string
+  _id: string
   parentId: string
   parentName: string
   parentEmail: string
   amount: number
-  dueDate: string | Date
+  dueDate: number
   daysPastDue: number
   remindersSent: number
-  lastReminderSent: string | null
-  paymentPlanType: string
+  lastReminderSent: number | null
+  status: string
+  parent: any
 }
 
 export default function OverduePaymentsPage() {
-  const [overduePayments, setOverduePayments] = useState<OverduePayment[]>([])
-  const [loading, setLoading] = useState(true)
+  // Use Convex query instead of API call
+  const overduePaymentsData = useQuery(api.payments.getOverduePayments)
+  const loading = overduePaymentsData === undefined
+  
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedPayments, setSelectedPayments] = useState<string[]>([])
   const [sendingReminders, setSendingReminders] = useState(false)
 
-  useEffect(() => {
-    fetchOverduePayments()
-  }, [])
+  const overduePayments = overduePaymentsData || []
 
-  const fetchOverduePayments = async () => {
-    try {
-      const response = await fetch('/api/payments/overdue')
-      
-      if (response.ok) {
-        const data = await response.json()
-        setOverduePayments(Array.isArray(data) ? data : [])
-      } else {
-        console.error('Failed to fetch overdue payments:', response.status)
-      }
-    } catch (error) {
-      console.error('Error fetching overdue payments:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
+  useEffect(() => {
+    // No need to fetch here as data is now from Convex
+  }, [])
 
   const handlePaymentSelection = (paymentId: string, selected: boolean) => {
     if (selected) {
@@ -75,7 +65,7 @@ export default function OverduePaymentsPage() {
   }
 
   const selectAllPayments = () => {
-    setSelectedPayments(filteredPayments.map(p => p.id))
+    setSelectedPayments(overduePayments.map(p => p._id))
   }
 
   const clearSelection = () => {
@@ -110,8 +100,9 @@ export default function OverduePaymentsPage() {
     }
   }
 
-  const getDaysOverdue = (dueDate: string | Date) => {
-    const dueDateObj = typeof dueDate === 'string' ? new Date(dueDate) : dueDate
+  const getDaysOverdue = (dueDate: number | undefined) => {
+    if (!dueDate) return 0
+    const dueDateObj = new Date(dueDate)
     return Math.floor((new Date().getTime() - dueDateObj.getTime()) / (1000 * 60 * 60 * 24))
   }
 
@@ -282,11 +273,11 @@ export default function OverduePaymentsPage() {
                   const severity = getOverdueSeverity(daysOverdue)
                   
                   return (
-                    <div key={payment.id} className="border rounded-lg p-4 hover:bg-gray-50">
+                    <div key={payment._id} className="border rounded-lg p-4 hover:bg-gray-50">
                       <div className="flex items-center space-x-4">
                         <Checkbox
-                          checked={selectedPayments.includes(payment.id)}
-                          onCheckedChange={(checked) => handlePaymentSelection(payment.id, !!checked)}
+                          checked={selectedPayments.includes(payment._id)}
+                          onCheckedChange={(checked) => handlePaymentSelection(payment._id, !!checked)}
                         />
                         <div className="flex-1">
                           <div className="flex items-center justify-between mb-2">
@@ -301,7 +292,7 @@ export default function OverduePaymentsPage() {
                                 ${Number(payment.amount).toLocaleString()}
                               </p>
                               <p className="text-sm text-gray-600">
-                                Due: {new Date(payment.dueDate).toLocaleDateString()}
+                                Due: {payment.dueDate ? new Date(payment.dueDate).toLocaleDateString() : 'No due date'}
                               </p>
                             </div>
                           </div>
@@ -313,7 +304,7 @@ export default function OverduePaymentsPage() {
                               <span className="font-medium">Reminders Sent:</span> {payment.remindersSent}
                             </div>
                             <div>
-                              <span className="font-medium">Payment Plan:</span> {payment.paymentPlanType || 'N/A'}
+                              <span className="font-medium">Payment Plan:</span> {payment.status || 'N/A'}
                             </div>
                           </div>
                         </div>
@@ -326,7 +317,7 @@ export default function OverduePaymentsPage() {
                             </Button>
                           )}
                           <Button variant="outline" size="sm" asChild>
-                            <Link href={`/payments/${payment.id}`}>
+                            <Link href={`/payments/${payment._id}`}>
                               <Edit className="h-4 w-4" />
                             </Link>
                           </Button>

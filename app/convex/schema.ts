@@ -82,10 +82,12 @@ export default defineSchema({
     color: v.optional(v.string()),
     description: v.optional(v.string()),
     isActive: v.optional(v.boolean()),
+    order: v.optional(v.number()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
-    .index("by_name", ["name"]),
+    .index("by_name", ["name"])
+    .index("by_order", ["order"]),
 
   templates: defineTable({
     name: v.optional(v.string()),

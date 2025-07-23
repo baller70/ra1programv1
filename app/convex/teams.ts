@@ -109,3 +109,59 @@ export const deleteTeam = mutation({
     return { success: true };
   },
 });
+
+// Assign parents to team function
+export const assignParentsToTeam = mutation({
+  args: {
+    teamId: v.optional(v.id("teams")),
+    parentIds: v.array(v.id("parents"))
+  },
+  handler: async (ctx, args) => {
+    const { teamId, parentIds } = args;
+    
+    // Verify team exists if teamId is provided
+    if (teamId) {
+      const team = await ctx.db.get(teamId);
+      if (!team) {
+        throw new Error("Team not found");
+      }
+    }
+    
+    // Verify all parent IDs exist
+    const parents = [];
+    for (const parentId of parentIds) {
+      const parent = await ctx.db.get(parentId);
+      if (!parent) {
+        throw new Error(`Parent with ID ${parentId} not found`);
+      }
+      parents.push(parent);
+    }
+    
+    // Update all parents with the new team assignment
+    const updatedParents = [];
+    for (const parentId of parentIds) {
+      await ctx.db.patch(parentId, {
+        teamId: teamId || undefined,
+        updatedAt: Date.now()
+      });
+      
+      // Get updated parent with team info
+      const updatedParent = await ctx.db.get(parentId);
+      let team = null;
+      if (updatedParent?.teamId) {
+        team = await ctx.db.get(updatedParent.teamId as any);
+      }
+      
+      updatedParents.push({
+        ...updatedParent,
+        team
+      });
+    }
+    
+    return {
+      success: true,
+      assignedCount: parentIds.length,
+      parents: updatedParents
+    };
+  },
+});
