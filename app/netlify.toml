@@ -1,9 +1,13 @@
 [build]
-  command = "echo 'Using pre-built files' && ls -la .next"
+  command = "npm ci && npm run build"
   publish = ".next"
 
 [build.environment]
   NODE_VERSION = "18"
+
+# Next.js plugin for better compatibility
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
 
 # Handle Next.js routing
 [[redirects]]
