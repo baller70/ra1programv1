@@ -1,0 +1,32 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next",
+  "installCommand": "npm install",
+  "devCommand": "npm run dev",
+  "env": {
+    "NEXT_PUBLIC_CONVEX_URL": "@convex_url",
+    "CONVEX_DEPLOYMENT": "@convex_deployment",
+    "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "@clerk_publishable_key",
+    "CLERK_SECRET_KEY": "@clerk_secret_key",
+    "CLERK_JWT_ISSUER_DOMAIN": "@clerk_jwt_issuer_domain",
+    "CLERK_WEBHOOK_SECRET": "@clerk_webhook_secret",
+    "OPENAI_API_KEY": "@openai_api_key",
+    "RESEND_API_KEY": "@resend_api_key",
+    "RESEND_FROM_EMAIL": "@resend_from_email",
+    "STRIPE_PUBLIC_KEY": "@stripe_public_key",
+    "STRIPE_SECRET_KEY": "@stripe_secret_key",
+    "STRIPE_WEBHOOK_SECRET": "@stripe_webhook_secret"
+  },
+  "functions": {
+    "app/api/**/*.ts": {
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    }
+  ]
+} 
