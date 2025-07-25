@@ -128,3 +128,25 @@ export type AIMessageGeneration = {
   tone: 'formal' | 'friendly' | 'urgent';
   personalization: Record<string, any>;
 };
+// AI Recommendation type (for backwards compatibility)
+export type AIRecommendation = {
+  id: string;
+  title: string;
+  description: string;
+  type: "payment" | "communication" | "template" | "workflow";
+  category: string;
+  priority: "low" | "medium" | "high";
+  status: RecommendationStatus;
+  parentId?: string;
+  paymentId?: string;
+  templateId?: string;
+  createdAt: number;
+  updatedAt: number;
+  metadata?: Record<string, any>;
+};
+
+export type AIRecommendationWithRelations = AIRecommendation & {
+  parent?: Parent;
+  payment?: Payment;
+  template?: Template;
+};
