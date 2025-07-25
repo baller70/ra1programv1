@@ -3,6 +3,8 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+// Temporarily disabled until Clerk is properly configured
+// import { useUser, useClerk } from '@clerk/nextjs'
 import { User, LogOut, Menu, X } from 'lucide-react'
 import { Button } from './ui/button'
 import {
@@ -17,13 +19,16 @@ import { NotificationDropdown } from './ui/notification-dropdown'
 export function Header() {
   // Temporarily disabled for development - uncomment when Clerk is properly configured
   // const { user } = useUser()
+  // const { signOut } = useClerk()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
-  // Mock user data for development
+  // Mock user data for development (remove when Clerk is configured)
   const user = {
+    id: 'dev-user',
     firstName: 'Admin',
     lastName: 'User',
-    emailAddresses: [{ emailAddress: 'admin@riseasone.com' }]
+    emailAddresses: [{ emailAddress: 'admin@riseasone.com' }],
+    publicMetadata: { role: 'admin' }
   }
 
   const navigation = [
@@ -34,6 +39,34 @@ export function Header() {
     { name: 'Contracts', href: '/contracts' },
     { name: 'Settings', href: '/settings' },
   ]
+
+  const handleSignOut = () => {
+    // signOut({ redirectUrl: '/' })
+    console.log('Sign out clicked - Clerk not configured yet')
+  }
+
+  // Show sign-in prompt if no user (when Clerk is enabled)
+  // if (!user) {
+  //   return (
+  //     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+  //       <div className="container flex h-16 items-center justify-between">
+  //         <div className="flex items-center space-x-4">
+  //           <Link href="/" className="flex items-center space-x-2">
+  //             <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center">
+  //               <span className="text-white font-bold text-sm">R1</span>
+  //             </div>
+  //             <span className="font-bold text-xl">Rise as One</span>
+  //           </Link>
+  //         </div>
+  //         <div className="flex items-center space-x-4">
+  //           <Button asChild>
+  //             <Link href="/sign-in">Sign In</Link>
+  //           </Button>
+  //         </div>
+  //       </div>
+  //     </header>
+  //   )
+  // }
 
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -49,7 +82,7 @@ export function Header() {
         </div>
 
         {/* Desktop Navigation */}
-        <nav className="hidden md:flex items-center space-x-6">
+        <nav className="hidden md:flex items-center space-x-8">
           {navigation.map((item) => (
             <Link
               key={item.name}
@@ -61,12 +94,12 @@ export function Header() {
           ))}
         </nav>
 
-        {/* User Menu */}
+        {/* User Actions */}
         <div className="flex items-center space-x-4">
           {/* Notifications */}
-          <NotificationDropdown userId="dev-user" />
+          <NotificationDropdown userId={user.id} />
 
-          {/* User Dropdown */}
+          {/* User Menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="relative h-8 w-8 rounded-full">
@@ -80,12 +113,17 @@ export function Header() {
                   <p className="w-[200px] truncate text-sm text-muted-foreground">
                     {user?.emailAddresses[0]?.emailAddress}
                   </p>
+                  {user?.publicMetadata?.role && typeof user.publicMetadata.role === 'string' && (
+                    <p className="text-xs text-muted-foreground capitalize">
+                      Role: {user.publicMetadata.role}
+                    </p>
+                  )}
                 </div>
               </div>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="cursor-pointer">
+              <DropdownMenuItem className="cursor-pointer" onClick={handleSignOut}>
                 <LogOut className="mr-2 h-4 w-4" />
-                <span>Log out</span>
+                <span>Sign out</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

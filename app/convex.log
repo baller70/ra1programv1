@@ -1,0 +1,12 @@
+✔ Provisioned a dev deployment and saved its name as CONVEX_DEPLOYMENT to .env.local
+
+Write your Convex functions in convex/
+Give us feedback at https://convex.dev/community or support@convex.dev
+View the Convex dashboard at https://dashboard.convex.dev/d/confident-wildcat-124
+
+- Preparing Convex functions...
+
+✔ 08:33:07 Convex functions ready! (421.04ms)
+- Preparing Convex functions...
+
+✔ 08:38:21 Convex functions ready! (855.19ms)
