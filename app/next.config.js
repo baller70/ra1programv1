@@ -3,7 +3,6 @@ const path = require('path');
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   distDir: process.env.NEXT_DIST_DIR || '.next',
-  output: process.env.NEXT_OUTPUT_MODE,
   experimental: {
     outputFileTracingRoot: path.join(__dirname, '../'),
   },
@@ -28,10 +27,6 @@ const nextConfig = {
           {
             key: 'X-DNS-Prefetch-Control',
             value: 'on'
-          },
-          {
-            key: 'Strict-Transport-Security',
-            value: 'max-age=63072000; includeSubDomains; preload'
           },
           {
             key: 'X-XSS-Protection',
@@ -85,22 +80,6 @@ const nextConfig = {
       exclude: ['error', 'warn']
     } : false,
   },
-
-  // Bundle analyzer (enable with ANALYZE=true)
-  ...(process.env.ANALYZE === 'true' && {
-    webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
-      if (!dev && !isServer) {
-        const { BundleAnalyzerPlugin } = require('webpack-bundle-analyzer')
-        config.plugins.push(
-          new BundleAnalyzerPlugin({
-            analyzerMode: 'static',
-            openAnalyzer: false,
-          })
-        )
-      }
-      return config
-    },
-  }),
 };
 
 module.exports = nextConfig;

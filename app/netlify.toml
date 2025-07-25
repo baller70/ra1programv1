@@ -1,16 +1,16 @@
 [build]
+  base = "app"
   command = "npm ci && npm run build"
-  publish = ".next"
+  publish = "app/.next"
 
 [build.environment]
   NODE_VERSION = "18"
-  NPM_VERSION = "8"
 
-# Next.js plugin
+# Next.js plugin for better compatibility
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
-# Handle Next.js app routing
+# Handle Next.js routing
 [[redirects]]
   from = "/*"
   to = "/index.html"
