@@ -1,10 +1,9 @@
 [build]
-  command = "npm ci --production=false && npm run build"
+  command = "echo 'Using pre-built files' && ls -la .next"
   publish = ".next"
 
 [build.environment]
   NODE_VERSION = "18"
-  NPM_CONFIG_PRODUCTION = "false"
 
 # Handle Next.js routing
 [[redirects]]
