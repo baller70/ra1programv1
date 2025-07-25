@@ -1,33 +1,40 @@
 [build]
-  command = "npm run build"
+  command = "npm install && npm run build"
   publish = ".next"
+  base = "."
 
 [build.environment]
   NODE_VERSION = "18"
+  NPM_FLAGS = "--legacy-peer-deps"
 
+# Next.js plugin for better compatibility
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
 [functions]
   directory = "netlify/functions"
 
-# Redirect all requests to Next.js
+# Handle Next.js routing
+[[redirects]]
+  from = "/_next/*"
+  to = "/_next/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
 
-# API routes
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
-
-# Environment variables (will be set via Netlify UI)
-# NEXT_PUBLIC_CONVEX_URL
-# CONVEX_DEPLOYMENT  
-# NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
-# CLERK_SECRET_KEY
-# OPENAI_API_KEY
-# RESEND_API_KEY
-# RESEND_FROM_EMAIL 
+# Headers for security
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin" 
