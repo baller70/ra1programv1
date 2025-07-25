@@ -3,87 +3,34 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/api-utils'
-// Clerk auth
-import { prisma } from '../../../../lib/db'
 
 export async function GET() {
   try {
     await requireAuth()
     
-
-    // Get contract statistics
-    const [total, signed, pending, expired, expiringSoon] = await Promise.all([
-      prisma.contract.count(),
-      prisma.contract.count({ where: { status: 'signed' } }),
-      prisma.contract.count({ where: { status: 'pending' } }),
-      prisma.contract.count({ where: { status: 'expired' } }),
-      prisma.contract.count({
-        where: {
-          status: 'signed',
-          expiresAt: {
-            gte: new Date(),
-            lte: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days from now
-          }
-        }
-      })
-    ])
-
-    // Get recent activity
-    const recentContracts = await prisma.contract.findMany({
-      include: { parent: true },
-      orderBy: { updatedAt: 'desc' },
-      take: 10
-    })
-
-    // Get contracts by template type
-    const contractsByTemplate = await prisma.contract.groupBy({
-      by: ['templateType'],
-      _count: { _all: true }
-    })
-
-    // Get monthly contract trend
-    const sixMonthsAgo = new Date()
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
-
-    const monthlyTrend = await prisma.contract.groupBy({
-      by: ['uploadedAt'],
-      _count: { _all: true },
-      where: {
-        uploadedAt: { gte: sixMonthsAgo }
-      }
-    })
-
-    // Process monthly trend data
-    const trendData = []
-    for (let i = 5; i >= 0; i--) {
-      const date = new Date()
-      date.setMonth(date.getMonth() - i)
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-      
-      const count = monthlyTrend.filter(item => {
-        const itemDate = new Date(item.uploadedAt)
-        const itemKey = `${itemDate.getFullYear()}-${String(itemDate.getMonth() + 1).padStart(2, '0')}`
-        return itemKey === monthKey
-      }).reduce((sum, item) => sum + item._count._all, 0)
-
-      trendData.push({
-        month: date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
-        contracts: count
-      })
-    }
-
-    return NextResponse.json({
+    // For now, return mock data since contracts table isn't implemented in Convex yet
+    // TODO: Implement contracts table in Convex schema and create analytics queries
+    const mockStats = {
       stats: {
-        total,
-        signed,
-        pending,
-        expired,
-        expiringSoon
+        total: 0,
+        signed: 0,
+        pending: 0,
+        expired: 0,
+        expiringSoon: 0
       },
-      recentContracts,
-      contractsByTemplate,
-      monthlyTrend: trendData
-    })
+      recentContracts: [],
+      contractsByTemplate: [],
+      monthlyTrend: Array.from({ length: 6 }, (_, i) => {
+        const date = new Date();
+        date.setMonth(date.getMonth() - (5 - i));
+        return {
+          month: date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+          contracts: 0
+        };
+      })
+    };
+
+    return NextResponse.json(mockStats)
 
   } catch (error) {
     console.error('Contract stats error:', error)

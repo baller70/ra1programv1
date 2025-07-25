@@ -3,24 +3,21 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server'
 import { requireAuth } from '../../../lib/api-utils'
-import { prisma } from '../../../lib/db'
+import { convexHttp } from '../../../lib/db'
+import { api } from '../../../convex/_generated/api'
 
 export async function GET() {
   try {
     await requireAuth()
 
-    const templates = await prisma.template.findMany({
-      include: {
-        messageLogs: true
-      },
-      orderBy: [
-        { isActive: 'desc' },
-        { usageCount: 'desc' },
-        { createdAt: 'desc' }
-      ]
-    })
+    // Get templates from Convex
+    const result = await convexHttp.query(api.templates.getTemplates, {
+      page: 1,
+      limit: 100,
+      isActive: true
+    });
 
-    return NextResponse.json(templates)
+    return NextResponse.json(result.templates)
   } catch (error) {
     console.error('Templates fetch error:', error)
     return NextResponse.json(
@@ -45,19 +42,22 @@ export async function POST(request: Request) {
       isAiGenerated = false
     } = body
 
-    const template = await prisma.template.create({
-      data: {
-        name,
-        subject,
-        body: templateBody,
-        category,
-        channel,
-        variables: variables || [],
-        isAiGenerated,
-        isActive: true,
-        usageCount: 0
-      }
-    })
+    // Create template in Convex
+    const templateId = await convexHttp.mutation(api.templates.createTemplate, {
+      name,
+      subject,
+      body: templateBody,
+      category,
+      channel: channel || 'email',
+      variables: variables || [],
+      isAiGenerated,
+      isActive: true
+    });
+
+    // Get the created template
+    const template = await convexHttp.query(api.templates.getTemplate, {
+      id: templateId as any
+    });
 
     return NextResponse.json(template)
   } catch (error) {

@@ -4,10 +4,43 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/api-utils'
-// Clerk auth
-import { prisma } from '../../../../lib/db'
+import { convexHttp } from '../../../../lib/db'
+import { api } from '../../../../convex/_generated/api'
 import * as XLSX from 'xlsx'
-import { BulkUploadParent, ValidationError, BulkUploadValidation } from '../../../../lib/types'
+
+// Define types inline
+interface BulkUploadParent {
+  name: string;
+  email: string;
+  phone?: string;
+  address?: string;
+  emergencyContact?: string;
+  emergencyPhone?: string;
+  notes?: string;
+}
+
+interface ValidationError {
+  row: number;
+  field: string;
+  message: string;
+  value: string;
+}
+
+interface BulkUploadValidation {
+  data: BulkUploadParent[];
+  errors: ValidationError[];
+  duplicates: Array<{
+    email: string;
+    rows: number[];
+    existsInDb: boolean;
+  }>;
+  stats: {
+    totalRows: number;
+    validRows: number;
+    errorRows: number;
+    duplicateRows: number;
+  };
+}
 
 function validateEmail(email: string): boolean {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -51,7 +84,6 @@ export async function POST(request: NextRequest) {
   try {
     await requireAuth()
     
-
     const formData = await request.formData()
     const file = formData.get('file') as File
     
@@ -123,11 +155,9 @@ export async function POST(request: NextRequest) {
     const data: BulkUploadParent[] = []
     const errors: ValidationError[] = []
     
-    // Get existing emails from database for duplicate checking
-    const existingParents = await prisma.parent.findMany({
-      select: { email: true }
-    })
-    const existingEmails = new Set(existingParents.map(p => p.email.toLowerCase()))
+    // Get existing emails from Convex for duplicate checking
+    const existingParentsResponse = await convexHttp.query(api.parents.getParents, {});
+    const existingEmails = new Set(existingParentsResponse.parents.map((p: any) => p.email.toLowerCase()));
 
     // Track email duplicates within the file
     const emailCounts: { [email: string]: number[] } = {}

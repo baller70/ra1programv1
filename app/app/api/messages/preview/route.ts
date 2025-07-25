@@ -3,14 +3,13 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/api-utils'
-// Clerk auth
-import { prisma } from '../../../../lib/db'
+import { convexHttp } from '../../../../lib/db'
+import { api } from '../../../../convex/_generated/api'
 
 export async function POST(request: Request) {
   try {
     await requireAuth()
     
-
     const body = await request.json()
     const {
       subject,
@@ -19,13 +18,16 @@ export async function POST(request: Request) {
       variables = {}
     } = body
 
-    // Get parent info for preview
-    const parent = await prisma.parent.findFirst({
-      where: { id: { in: recipients } }
-    })
-
-    if (!parent && recipients.length > 0) {
-      return NextResponse.json({ error: 'No valid recipients found' }, { status: 400 })
+    // Get parent info for preview from Convex
+    let parent = null;
+    if (recipients && recipients.length > 0) {
+      try {
+        parent = await convexHttp.query(api.parents.getParent, {
+          id: recipients[0] as any
+        });
+      } catch (error) {
+        console.log('Could not fetch parent for preview:', error);
+      }
     }
 
     // Process variables for preview
@@ -45,12 +47,26 @@ export async function POST(request: Request) {
         processedSubject = processedSubject.replace(regex, String(value))
         processedBody = processedBody.replace(regex, String(value))
       })
+    } else {
+      // Use placeholder values if no parent found
+      const templateVariables = {
+        parentName: '[Parent Name]',
+        parentEmail: '[Parent Email]',
+        programName: 'Rise as One Yearly Program',
+        ...variables
+      }
+
+      Object.entries(templateVariables).forEach(([key, value]) => {
+        const regex = new RegExp(`{${key}}`, 'g')
+        processedSubject = processedSubject.replace(regex, String(value))
+        processedBody = processedBody.replace(regex, String(value))
+      })
     }
 
     return NextResponse.json({
       subject: processedSubject,
       body: processedBody,
-      recipientCount: recipients.length,
+      recipientCount: recipients?.length || 0,
       estimatedDelivery: new Date()
     })
 

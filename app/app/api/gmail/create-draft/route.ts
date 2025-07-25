@@ -3,15 +3,14 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/api-utils'
-// Clerk auth
 import { gmailService } from '../../../../lib/gmail'
-import { prisma } from '../../../../lib/db'
+import { convexHttp } from '../../../../lib/db'
+import { api } from '../../../../convex/_generated/api'
 
 export async function POST(request: Request) {
   try {
     await requireAuth()
     
-
     const body = await request.json()
     const {
       to,
@@ -32,36 +31,26 @@ export async function POST(request: Request) {
       body: messageBody
     })
 
-    // Log the message creation
+    // Log the message creation (for now just log to console since message logging isn't fully implemented)
+    // TODO: Implement message logging in Convex schema
     if (parentIds && parentIds.length > 0) {
-      for (const parentId of parentIds) {
-        await prisma.messageLog.create({
-          data: {
-            parentId,
-            templateId: templateId || null,
-            subject,
-            body: messageBody,
-            channel: 'email',
-            status: 'draft_created',
-            metadata: {
-              draftId: draft.draftId,
-              webUrl: draft.webUrl
-            }
-          }
-        })
-      }
+      console.log('Gmail draft created for parents:', parentIds, {
+        draftId: draft.draftId,
+        webUrl: draft.webUrl,
+        subject,
+        templateId
+      });
     }
 
     // Update template usage count if template was used
     if (templateId) {
-      await prisma.template.update({
-        where: { id: templateId },
-        data: {
-          usageCount: {
-            increment: 1
-          }
-        }
-      })
+      try {
+        await convexHttp.mutation(api.templates.incrementTemplateUsage, {
+          id: templateId as any
+        });
+      } catch (error) {
+        console.error('Failed to update template usage count:', error);
+      }
     }
 
     return NextResponse.json({

@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server'
 import { requireAuth } from '../../../../../lib/api-utils'
 // Clerk auth
+import { streamCompletion } from '../../../../../../lib/ai'
 
 export async function POST(request: Request) {
   try {
@@ -39,69 +40,24 @@ export async function POST(request: Request) {
       }
     ]
 
-    const response = await fetch('https://apps.abacus.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.ABACUSAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-4.1-mini',
-        messages: messages,
-        stream: true,
-        max_tokens: getMaxTokensForLength(length),
-        temperature: getTempForTone(tone)
-      }),
-    })
-
-    if (!response.ok) {
-      throw new Error(`AI API error: ${response.statusText}`)
-    }
-
-    const stream = response.body
-    if (!stream) {
-      throw new Error('No response stream')
-    }
-
+    // Use OpenAI streaming through our AI library
     const encoder = new TextEncoder()
     const readable = new ReadableStream({
       async start(controller) {
         try {
-          const reader = stream.getReader()
-          
-          while (true) {
-            const { done, value } = await reader.read()
-            if (done) break
-            
-            const chunk = new TextDecoder().decode(value)
-            const lines = chunk.split('\n')
-            
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const data = line.slice(6)
-                if (data === '[DONE]') {
-                  controller.enqueue(encoder.encode('data: [DONE]\n\n'))
-                  controller.close()
-                  return
-                }
-                
-                try {
-                  const parsed = JSON.parse(data)
-                  const content = parsed.choices?.[0]?.delta?.content || ''
-                  if (content) {
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`))
-                  }
-                } catch (e) {
-                  // Skip invalid JSON
-                }
-              }
+          await streamCompletion({
+            messages,
+            maxTokens: getMaxTokensForLength(length),
+            temperature: getTempForTone(tone),
+            onChunk: (content: string) => {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`))
             }
-          }
+          })
           
           controller.enqueue(encoder.encode('data: [DONE]\n\n'))
           controller.close()
         } catch (error) {
-          console.error('Streaming error:', error)
+          console.error('Stream error:', error)
           controller.error(error)
         }
       }

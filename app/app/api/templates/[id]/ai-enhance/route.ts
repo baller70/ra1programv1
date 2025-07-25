@@ -3,14 +3,13 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server'
 import { requireAuth } from '../../../../../lib/api-utils'
-// Clerk auth
-import { prisma } from '../../../../../lib/db'
+import { convexHttp } from '../../../../../lib/db'
+import { api } from '../../../../../convex/_generated/api'
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
     await requireAuth()
     
-
     const body = await request.json()
     const {
       improvementType,
@@ -19,16 +18,10 @@ export async function POST(request: Request, { params }: { params: { id: string 
       specificInstructions
     } = body
 
-    // Get the current template
-    const template = await prisma.template.findUnique({
-      where: { id: params.id },
-      include: {
-        versions: {
-          orderBy: { createdAt: 'desc' },
-          take: 1
-        }
-      }
-    })
+    // Get the current template from Convex
+    const template = await convexHttp.query(api.templates.getTemplate, {
+      id: params.id as any
+    });
 
     if (!template) {
       return NextResponse.json({ error: 'Template not found' }, { status: 404 })
@@ -86,48 +79,27 @@ export async function POST(request: Request, { params }: { params: { id: string 
       throw new Error('No improved content generated')
     }
 
-    // Create new template version
-    const currentVersion = template.versions[0]?.version || '1.0'
-    const versionParts = currentVersion.split('.')
-    const newVersion = `${versionParts[0]}.${parseInt(versionParts[1]) + 1}`
+    // Create new template version in Convex
+    // TODO: Implement template versioning in Convex schema
+    // For now, we'll update the existing template with improved content
+    await convexHttp.mutation(api.templates.updateTemplate, {
+      id: template._id,
+      body: improvedContent.trim(),
+      isAiGenerated: true
+    });
 
-    const templateVersion = await prisma.templateVersion.create({
-      data: {
-        templateId: template.id,
-        version: newVersion,
-        name: template.name,
-        subject: template.subject,
-        body: improvedContent.trim(),
-        category: template.category,
-        channel: template.channel,
-        variables: template.variables,
-        isAiGenerated: true,
-        aiPrompt: `${improvementType} enhancement with tone: ${desiredTone}. ${specificInstructions || ''}`,
-        changeDescription: `AI-enhanced for ${improvementType}`,
-        createdBy: session.user.email!
-      }
-    })
-
-    // Create improvement record
-    await prisma.templateImprovement.create({
-      data: {
-        templateVersionId: templateVersion.id,
-        improvementType,
-        originalText: template.body,
-        improvedText: improvedContent.trim(),
-        reason: `Enhanced for ${improvementType}. ${specificInstructions || 'Automated AI improvement to increase effectiveness and engagement.'}`,
-        confidence: 85, // Default confidence score
-        accepted: false
-      }
-    })
+    // Get the updated template
+    const updatedTemplate = await convexHttp.query(api.templates.getTemplate, {
+      id: template._id
+    });
 
     return NextResponse.json({
       success: true,
-      templateVersion,
+      template: updatedTemplate,
       originalContent: template.body,
       improvedContent: improvedContent.trim(),
       improvementType,
-      version: newVersion
+      message: 'Template enhanced successfully'
     })
 
   } catch (error) {

@@ -3,14 +3,13 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/api-utils'
-// Clerk auth
-import { prisma } from '../../../../lib/db'
+import { convexHttp } from '../../../../lib/db'
+import { api } from '../../../../convex/_generated/api'
 
 export async function POST(request: Request) {
   try {
     await requireAuth()
     
-
     const body = await request.json()
     const { prompt, category = 'general', channel = 'email' } = body
 
@@ -99,20 +98,22 @@ export async function POST(request: Request) {
                   try {
                     const templateData = JSON.parse(buffer)
                     
-                    // Create the template in the database
-                    const template = await prisma.template.create({
-                      data: {
-                        name: templateData.name,
-                        subject: templateData.subject || '',
-                        body: templateData.body,
-                        category: templateData.category || category,
-                        channel: templateData.channel || channel,
-                        variables: templateData.variables || [],
-                        isAiGenerated: true,
-                        isActive: true,
-                        usageCount: 0
-                      }
-                    })
+                    // Create the template in Convex
+                    const templateId = await convexHttp.mutation(api.templates.createTemplate, {
+                      name: templateData.name,
+                      subject: templateData.subject || '',
+                      body: templateData.body,
+                      category: templateData.category || category,
+                      channel: templateData.channel || channel,
+                      variables: templateData.variables || [],
+                      isAiGenerated: true,
+                      isActive: true
+                    });
+
+                    // Fetch the created template
+                    const template = await convexHttp.query(api.templates.getTemplate, {
+                      id: templateId
+                    });
 
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ template })}\n\n`))
                   } catch (e) {

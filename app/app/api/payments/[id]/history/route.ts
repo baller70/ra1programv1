@@ -1,19 +1,23 @@
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from 'next/server'
-import { prisma } from '../../../../../lib/db'
+import { requireAuth } from '../../../../../lib/api-utils'
+import { convexHttp } from '../../../../../lib/db'
+import { api } from '../../../../../convex/_generated/api'
 
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    // Temporarily disabled for testing: await requireAuth()
+    await requireAuth()
     
     const paymentId = params.id
 
-    // Check if payment exists
-    const payment = await prisma.payment.findUnique({
-      where: { id: paymentId }
-    })
+    // Get payment from Convex
+    const payment = await convexHttp.query(api.payments.getPayment, {
+      id: paymentId as any
+    });
 
     if (!payment) {
       return NextResponse.json(
@@ -22,15 +26,15 @@ export async function GET(
       )
     }
 
-    // Generate mock payment history for now
-    // In a real app, you'd have a PaymentHistory or AuditLog table
+    // Generate payment history based on payment data
+    // TODO: Implement proper payment history table in Convex for detailed audit trail
     const history = [
       {
         id: '1',
         action: 'Payment Created',
         description: `Payment of $${payment.amount} was created and assigned to parent`,
         performedBy: 'System',
-        performedAt: payment.createdAt || new Date().toISOString(),
+        performedAt: payment.createdAt || Date.now(),
         amount: payment.amount,
         status: 'pending'
       }
@@ -49,41 +53,44 @@ export async function GET(
       })
     }
 
-    // Add reminder entries based on remindersSent count
-    if (payment.remindersSent > 0) {
-      for (let i = 1; i <= payment.remindersSent; i++) {
-        history.push({
-          id: `reminder-${i}`,
-          action: `Reminder ${i} Sent`,
-          description: `Payment reminder was sent to parent via email`,
-          performedBy: 'System',
-          performedAt: new Date(Date.now() - (payment.remindersSent - i + 1) * 24 * 60 * 60 * 1000).toISOString(),
-          status: 'pending'
-        })
-      }
-    }
-
     // Add overdue status change if applicable
-    if (payment.status === 'overdue') {
+    if (payment.status === 'overdue' && payment.dueDate) {
       const dueDate = new Date(payment.dueDate)
       const dayAfterDue = new Date(dueDate.getTime() + 24 * 60 * 60 * 1000)
       
       history.push({
-        id: 'overdue',
-        action: 'Payment Overdue',
+        id: 'overdue-status',
+        action: 'Status Changed',
         description: `Payment became overdue after the due date passed`,
         performedBy: 'System',
-        performedAt: dayAfterDue.toISOString(),
+        performedAt: dayAfterDue.getTime(),
+        amount: 0,
         status: 'overdue'
       })
     }
 
+    // Add update history if payment was modified
+    if (payment.updatedAt && payment.updatedAt !== payment.createdAt) {
+      history.push({
+        id: 'updated',
+        action: 'Payment Updated',
+        description: `Payment details were modified`,
+        performedBy: 'System',
+        performedAt: payment.updatedAt,
+        amount: payment.amount,
+        status: payment.status
+      })
+    }
+
     // Sort history by date (newest first)
-    history.sort((a, b) => new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime())
+    history.sort((a, b) => b.performedAt - a.performedAt)
 
     return NextResponse.json({
       success: true,
-      history
+      history: history.map(h => ({
+        ...h,
+        performedAt: new Date(h.performedAt).toISOString()
+      }))
     })
 
   } catch (error) {

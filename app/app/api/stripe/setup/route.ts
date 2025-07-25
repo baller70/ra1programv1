@@ -1,5 +1,8 @@
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '../../../../lib/db';
+import { convexHttp } from '../../../../lib/db';
+import { api } from '../../../../convex/_generated/api';
 import Stripe from 'stripe';
 
 function getStripe() {
@@ -18,12 +21,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Parent ID is required' }, { status: 400 });
     }
 
-    // Get parent information
-    const parent = await prisma.parent.findUnique({
-      where: { id: parentId },
-      include: {
-        stripeCustomer: true
-      }
+    // Get parent information from Convex
+    const parent = await convexHttp.query(api.parents.getParent, {
+      id: parentId as any
     });
 
     if (!parent) {
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     }
 
     const stripe = getStripe();
-    let customerId = parent.stripeCustomer?.stripeCustomerId;
+    let customerId = parent.stripeCustomerId;
 
     // Create Stripe customer if doesn't exist
     if (!customerId) {
@@ -40,32 +40,16 @@ export async function GET(request: NextRequest) {
         email: parent.email,
         phone: parent.phone || undefined,
         metadata: {
-          parentId: parent.id,
+          parentId: parent._id,
           source: 'ra1-app'
         }
       });
       customerId = customer.id;
 
-      // Update parent with Stripe customer ID
-      await prisma.parent.update({
-        where: { id: parentId },
-        data: {
-          stripeCustomerId: customerId
-        }
-      });
-
-      // Create StripeCustomer record
-      await prisma.stripeCustomer.create({
-        data: {
-          parentId: parent.id,
-          stripeCustomerId: customerId,
-          email: parent.email,
-          name: parent.name,
-          phone: parent.phone,
-          delinquent: false,
-          balance: 0,
-          currency: 'usd'
-        }
+      // Update parent with Stripe customer ID in Convex
+      await convexHttp.mutation(api.parents.updateParent, {
+        id: parent._id,
+        stripeCustomerId: customerId
       });
     }
 
@@ -77,7 +61,7 @@ export async function GET(request: NextRequest) {
       cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/payments/${parentId}?setup=cancelled`,
       payment_method_types: ['card'],
       metadata: {
-        parentId: parent.id,
+        parentId: parent._id,
         action: 'payment_setup'
       }
     });

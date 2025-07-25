@@ -174,7 +174,15 @@ function SendMessagePageContent() {
 
       if (response.ok) {
         const result = await response.json()
-        toast.success(result.message)
+        
+        // Enhanced success message with more details
+        const successCount = result.summary?.sent || selectedParents.length
+        const totalCount = selectedParents.length
+        
+        toast.success(`✅ Messages Sent Successfully!`, {
+          description: `${successCount} of ${totalCount} messages sent via ${channel.toUpperCase()}. ${result.message}`,
+          duration: 6000,
+        })
         
         // If Gmail URLs were created, open them
         if (result.gmailUrls && result.gmailUrls.length > 0) {
@@ -195,7 +203,10 @@ function SendMessagePageContent() {
         setSelectedTemplate(null)
       } else {
         const error = await response.json()
-        toast.error(error.error || 'Failed to send messages')
+        toast.error(`❌ Failed to Send Messages`, {
+          description: error.error || 'An unexpected error occurred while sending messages',
+          duration: 7000,
+        })
       }
     } catch (error) {
       console.error('Send error:', error)

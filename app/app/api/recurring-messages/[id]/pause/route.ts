@@ -3,39 +3,25 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server'
 import { requireAuth } from '../../../../../lib/api-utils'
-// Clerk auth
-import { prisma } from '../../../../../lib/db'
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
     await requireAuth()
     
-
     const body = await request.json()
     const { reason } = body
 
-    const recurringMessage = await prisma.recurringMessage.update({
-      where: { id: params.id },
-      data: {
-        isActive: false,
-        pausedAt: new Date(),
-        pausedReason: reason || 'Paused by user'
-      }
-    })
+    // For now, just return success since recurring messages functionality isn't implemented
+    // TODO: Implement recurring message pause/resume in Convex
+    console.log('Recurring message pause requested:', params.id, { reason });
 
-    // Cancel pending instances
-    await prisma.recurringInstance.updateMany({
-      where: {
-        recurringMessageId: params.id,
-        status: 'scheduled',
-        scheduledFor: { gt: new Date() }
-      },
-      data: {
-        status: 'cancelled'
-      }
+    return NextResponse.json({
+      id: params.id,
+      isActive: false,
+      pausedAt: new Date(),
+      pausedReason: reason || 'Paused by user',
+      message: 'Recurring messages functionality not yet implemented'
     })
-
-    return NextResponse.json(recurringMessage)
   } catch (error) {
     console.error('Recurring message pause error:', error)
     return NextResponse.json(

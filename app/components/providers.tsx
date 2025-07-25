@@ -4,6 +4,8 @@
 import { ThemeProvider } from "next-themes";
 import { ConvexProvider, ConvexReactClient } from "convex/react";
 import { convex } from "@/lib/convex";
+import { Toaster } from "./ui/toaster";
+import { Toaster as SonnerToaster } from "./ui/sonner";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -15,6 +17,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
         disableTransitionOnChange
       >
         {children}
+        <Toaster />
+        <SonnerToaster />
       </ThemeProvider>
     </ConvexProvider>
   );

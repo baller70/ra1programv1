@@ -3,73 +3,72 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/api-utils'
-// Clerk auth
-import { prisma } from '../../../../lib/db'
+import { convexHttp } from '../../../../lib/db'
+import { api } from '../../../../convex/_generated/api'
 
 export async function GET(request: Request) {
   try {
     // Temporarily disabled for testing: await requireAuth()
     
-
     const { searchParams } = new URL(request.url)
     const parentId = searchParams.get('parentId')
     const channel = searchParams.get('channel')
     const status = searchParams.get('status')
+    const type = searchParams.get('type')
     const limit = parseInt(searchParams.get('limit') || '50')
-    const offset = parseInt(searchParams.get('offset') || '0')
+    const page = parseInt(searchParams.get('page') || '1')
 
-    const where: any = {}
-
-    if (parentId) {
-      where.parentId = parentId
-    }
-
-    if (channel && channel !== 'all') {
-      where.channel = channel
-    }
-
-    if (status && status !== 'all') {
-      where.status = status
-    }
-
-    const messages = await prisma.messageLog.findMany({
-      where,
-      include: {
-        parent: {
-          select: {
-            name: true,
-            email: true
-          }
-        },
-        template: {
-          select: {
-            name: true,
-            category: true
-          }
-        }
-      },
-      orderBy: {
-        sentAt: 'desc'
-      },
-      take: limit,
-      skip: offset
+    // Fetch message logs from Convex
+    const messageLogsResponse = await convexHttp.query(api.messageLogs.getMessageLogs, {
+      parentId: parentId || undefined,
+      channel: channel || undefined,
+      status: status || undefined,
+      type: type || undefined,
+      limit,
+      page,
     })
 
-    const total = await prisma.messageLog.count({ where })
+    // Transform the response to include parent information
+    const messages = messageLogsResponse.messages.map((message: any) => ({
+      id: message._id,
+      parentId: message.parentId,
+      parentName: message.parent?.name || 'Unknown Parent',
+      parentEmail: message.parent?.email || '',
+      subject: message.subject,
+      body: message.body || message.content,
+      channel: message.channel || 'email',
+      type: message.type || 'custom',
+      status: message.status,
+      sentAt: message.sentAt,
+      deliveredAt: message.deliveredAt,
+      readAt: message.readAt,
+      templateId: message.templateId,
+      templateName: message.templateName,
+      metadata: message.metadata,
+      failureReason: message.failureReason,
+      errorMessage: message.errorMessage,
+    }))
 
     return NextResponse.json({
       messages,
       pagination: {
-        total,
+        total: messageLogsResponse.pagination.total,
         limit,
-        offset,
-        hasMore: offset + limit < total
+        page,
+        totalPages: Math.ceil(messageLogsResponse.pagination.total / limit),
+        hasMore: messageLogsResponse.pagination.hasMore
+      },
+      summary: {
+        totalMessages: messageLogsResponse.pagination.total,
+        byStatus: {},
+        byChannel: {},
+        byType: {},
       }
     })
   } catch (error) {
     console.error('Message history fetch error:', error)
     return NextResponse.json(
-      { error: 'Failed to fetch message history' },
+      { error: 'Failed to fetch message history', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     )
   }

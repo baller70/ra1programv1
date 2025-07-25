@@ -3,106 +3,85 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server'
 import { requireAuth } from '../../../lib/api-utils'
-// Clerk auth
-import { prisma } from '../../../lib/db'
+import { convexHttp } from '../../../lib/db'
+import { api } from '../../../convex/_generated/api'
+import { Id } from '../../../convex/_generated/dataModel'
 
 export async function GET(request: Request) {
   try {
     await requireAuth()
     
-
     const { searchParams } = new URL(request.url)
+    const page = parseInt(searchParams.get('page') || '1')
+    const limit = parseInt(searchParams.get('limit') || '50')
     const status = searchParams.get('status')
+    const parentId = searchParams.get('parentId')
     const templateType = searchParams.get('templateType')
 
-    const where: any = {}
-    
-    if (status && status !== 'all') {
-      where.status = status
-    }
-    
-    if (templateType && templateType !== 'all') {
-      where.templateType = templateType
-    }
-
-    // Get contracts from new Contract model
-    const contracts = await prisma.contract.findMany({
-      where,
-      include: {
-        parent: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            phone: true
-          }
-        }
-      },
-      orderBy: [
-        { status: 'asc' }, // pending first, then signed, then expired
-        { uploadedAt: 'desc' }
-      ]
+    const result = await convexHttp.query(api.contracts.getContracts, {
+      page,
+      limit,
+      status: status || undefined,
+      parentId: parentId ? parentId as Id<"parents"> : undefined,
+      templateType: templateType || undefined,
     })
 
-    // Also get parents without contracts for backward compatibility
-    const parentsWithoutContracts = await prisma.parent.findMany({
-      where: {
-        contracts: {
-          none: {}
-        }
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        contractStatus: true,
-        contractUploadedAt: true,
-        contractExpiresAt: true,
-        contractUrl: true
-      }
-    })
-
-    // Combine both datasets
-    const allContracts = [
-      ...contracts.map(contract => ({
-        id: contract.id,
-        parentId: contract.parentId,
-        parentName: contract.parent.name,
-        parentEmail: contract.parent.email,
-        contractStatus: contract.status,
-        contractUploadedAt: contract.uploadedAt,
-        contractExpiresAt: contract.expiresAt,
-        contractUrl: contract.fileUrl,
-        fileName: contract.fileName,
-        originalName: contract.originalName,
-        templateType: contract.templateType,
-        notes: contract.notes,
-        signedAt: contract.signedAt,
-        isNewContract: true
-      })),
-      ...parentsWithoutContracts.map(parent => ({
-        id: parent.id,
-        parentId: parent.id,
-        parentName: parent.name,
-        parentEmail: parent.email,
-        contractStatus: parent.contractStatus,
-        contractUploadedAt: parent.contractUploadedAt,
-        contractExpiresAt: parent.contractExpiresAt,
-        contractUrl: parent.contractUrl,
-        fileName: null,
-        originalName: null,
-        templateType: null,
-        notes: null,
-        signedAt: null,
-        isNewContract: false
-      }))
-    ]
-
-    return NextResponse.json(allContracts)
+    return NextResponse.json(result)
   } catch (error) {
     console.error('Contracts fetch error:', error)
     return NextResponse.json(
       { error: 'Failed to fetch contracts' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    await requireAuth()
+    
+    const body = await request.json()
+    const {
+      parentId,
+      fileName,
+      originalName,
+      fileUrl,
+      fileSize,
+      mimeType,
+      templateType,
+      notes,
+      expiresAt
+    } = body
+
+    // Basic validation
+    if (!parentId || !fileName || !fileUrl) {
+      return NextResponse.json(
+        { error: 'Parent ID, file name, and file URL are required' },
+        { status: 400 }
+      )
+    }
+
+    const contractId = await convexHttp.mutation(api.contracts.createContract, {
+      parentId: parentId as Id<"parents">,
+      fileName,
+      originalName: originalName || fileName,
+      fileUrl,
+      fileSize: fileSize || 0,
+      mimeType: mimeType || 'application/pdf',
+      templateType,
+      notes,
+      expiresAt,
+    })
+
+    return NextResponse.json({
+      success: true,
+      contractId,
+      message: 'Contract created successfully'
+    })
+  } catch (error) {
+    console.error('Contract creation error:', error)
+    return NextResponse.json(
+      { error: 'Failed to create contract' },
       { status: 500 }
     )
   }

@@ -99,7 +99,7 @@ export async function generateMessage({
     - Include specific details when available
     - Maintain the program's supportive, community-focused brand voice
 
-    ${context.channel === 'sms' ? 'Keep SMS messages under 160 characters when possible.' : 'For emails, use professional HTML formatting with clear structure.'}`;
+    ${context.channel === 'sms' ? 'Keep SMS messages under 160 characters when possible.' : 'For emails, use plain text formatting with clear structure. Do NOT include HTML, CSS, or any markup - only clean, readable plain text.'}`;
 
     let contextInfo = '';
     if (parentData) {

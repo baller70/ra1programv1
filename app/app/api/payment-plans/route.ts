@@ -3,26 +3,15 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server'
 import { requireAuth } from '../../../lib/api-utils'
-// Clerk auth
-import { prisma } from '../../../lib/db'
+import { convexHttp } from '../../../lib/db'
+import { api } from '../../../convex/_generated/api'
 
 export async function GET() {
   try {
     await requireAuth()
     
-
-    const paymentPlans = await prisma.paymentPlan.findMany({
-      include: {
-        parent: true,
-        payments: {
-          orderBy: { dueDate: 'asc' }
-        }
-      },
-      orderBy: [
-        { status: 'asc' },
-        { nextDueDate: 'asc' }
-      ]
-    })
+    // Get payment plans from Convex
+    const paymentPlans = await convexHttp.query(api.payments.getPaymentPlans, {});
 
     return NextResponse.json(paymentPlans)
   } catch (error) {
@@ -38,7 +27,6 @@ export async function POST(request: Request) {
   try {
     await requireAuth()
     
-
     const body = await request.json()
     const {
       parentId,
@@ -55,25 +43,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // Calculate next due date
-    const nextDueDate = new Date(startDate)
-
-    const paymentPlan = await prisma.paymentPlan.create({
-      data: {
-        parentId,
-        type,
-        totalAmount,
-        installmentAmount,
-        installments,
-        startDate: new Date(startDate),
-        nextDueDate,
-        description,
-        status: 'active'
-      },
-      include: {
-        parent: true
-      }
-    })
+    // Create payment plan in Convex
+    const paymentPlanId = await convexHttp.mutation(api.payments.createPaymentPlan, {
+      parentId: parentId as any,
+      type,
+      totalAmount,
+      installmentAmount,
+      installments,
+      startDate: new Date(startDate).getTime(),
+      status: 'active',
+      description
+    });
 
     // Create individual payment records
     const payments = []
@@ -81,20 +61,25 @@ export async function POST(request: Request) {
       const dueDate = new Date(startDate)
       dueDate.setMonth(dueDate.getMonth() + i)
 
-      payments.push({
-        parentId,
-        paymentPlanId: paymentPlan.id,
-        dueDate,
+      const paymentId = await convexHttp.mutation(api.payments.createPayment, {
+        parentId: parentId as any,
+        paymentPlanId: paymentPlanId as any,
         amount: installmentAmount,
+        dueDate: dueDate.getTime(),
         status: 'pending'
-      })
+      });
+
+      payments.push(paymentId);
     }
 
-    await prisma.payment.createMany({
-      data: payments
-    })
+    // Get the created payment plan with parent info
+    const createdPlan = await convexHttp.query(api.payments.getPaymentPlans, {
+      parentId: parentId as any
+    });
 
-    return NextResponse.json(paymentPlan)
+    const plan = createdPlan.find(p => p._id === paymentPlanId);
+
+    return NextResponse.json(plan || { _id: paymentPlanId })
   } catch (error) {
     console.error('Payment plan creation error:', error)
     return NextResponse.json(

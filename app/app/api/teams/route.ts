@@ -2,7 +2,8 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { prisma } from '../../../lib/db';
+import { convexHttp } from '../../../lib/db';
+import { api } from '../../../convex/_generated/api';
 
 const createTeamSchema = z.object({
   name: z.string().min(1, 'Team name is required'),
@@ -21,28 +22,11 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const includeParents = searchParams.get('includeParents') === 'true';
-    const activeOnly = searchParams.get('activeOnly') !== 'false'; // Default to true
 
-    const teams = await prisma.team.findMany({
-      where: activeOnly ? { isActive: true } : {},
-      include: {
-        parents: includeParents ? {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            status: true,
-          }
-        } : false,
-        _count: {
-          select: {
-            parents: true
-          }
-        }
-      },
-      orderBy: {
-        name: 'asc'
-      }
+    // Get teams from Convex
+    const teams = await convexHttp.query(api.teams.getTeams, {
+      includeParents,
+      limit: 100
     });
 
     return NextResponse.json(teams);
@@ -60,10 +44,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { name, description, color } = createTeamSchema.parse(body);
 
-    // Check if team name already exists
-    const existingTeam = await prisma.team.findUnique({
-      where: { name }
-    });
+    // Check if team name already exists by getting all teams
+    const existingTeams = await convexHttp.query(api.teams.getTeams, {});
+    const existingTeam = existingTeams.find(team => team.name === name);
 
     if (existingTeam) {
       return NextResponse.json(
@@ -72,22 +55,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const team = await prisma.team.create({
-      data: {
-        name,
-        description,
-        color,
-      },
-      include: {
-        _count: {
-          select: {
-            parents: true
-          }
-        }
-      }
+    // Create team in Convex
+    const teamId = await convexHttp.mutation(api.teams.createTeam, {
+      name,
+      description,
+      color
     });
 
-    return NextResponse.json(team, { status: 201 });
+    // Get the created team
+    const teams = await convexHttp.query(api.teams.getTeams, {});
+    const createdTeam = teams.find(team => team._id === teamId);
+
+    return NextResponse.json(createdTeam, { status: 201 });
   } catch (error) {
     console.error('Error creating team:', error);
     
@@ -121,12 +100,8 @@ export async function PUT(request: NextRequest) {
 
     // If updating name, check for uniqueness
     if (validatedData.name) {
-      const existingTeam = await prisma.team.findFirst({
-        where: {
-          name: validatedData.name,
-          id: { not: id }
-        }
-      });
+      const existingTeams = await convexHttp.query(api.teams.getTeams, {});
+      const existingTeam = existingTeams.find(team => team.name === validatedData.name && team._id !== id);
 
       if (existingTeam) {
         return NextResponse.json(
@@ -136,19 +111,19 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    const team = await prisma.team.update({
-      where: { id },
-      data: validatedData,
-      include: {
-        _count: {
-          select: {
-            parents: true
-          }
-        }
-      }
+    // Update team in Convex
+    await convexHttp.mutation(api.teams.updateTeam, {
+      teamId: id as any,
+      name: validatedData.name,
+      description: validatedData.description,
+      color: validatedData.color
     });
 
-    return NextResponse.json(team);
+    // Get updated team
+    const teams = await convexHttp.query(api.teams.getTeams, {});
+    const updatedTeam = teams.find(team => team._id === id);
+
+    return NextResponse.json(updatedTeam);
   } catch (error) {
     console.error('Error updating team:', error);
     
@@ -178,17 +153,9 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Check if team has parents
-    const team = await prisma.team.findUnique({
-      where: { id },
-      include: {
-        _count: {
-          select: {
-            parents: true
-          }
-        }
-      }
-    });
+    // Get team with parents to check if it can be deleted
+    const teams = await convexHttp.query(api.teams.getTeams, { includeParents: true });
+    const team = teams.find(t => t._id === id);
 
     if (!team) {
       return NextResponse.json(
@@ -197,15 +164,16 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    if (team._count.parents > 0) {
+    if ((team as any).parents && (team as any).parents.length > 0) {
       return NextResponse.json(
         { error: 'Cannot delete team with assigned parents. Please reassign parents first.' },
         { status: 400 }
       );
     }
 
-    await prisma.team.delete({
-      where: { id }
+    // Delete team in Convex
+    await convexHttp.mutation(api.teams.deleteTeam, {
+      teamId: id as any
     });
 
     return NextResponse.json({ success: true });

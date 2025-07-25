@@ -3,29 +3,14 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server'
 import { requireAuth } from '../../../../../lib/api-utils'
-// Clerk auth
-import { prisma } from '../../../../../lib/db'
 
 export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {
     await requireAuth()
     
-
-    const versions = await prisma.templateVersion.findMany({
-      where: { templateId: params.id },
-      include: {
-        improvements: true,
-        analytics: true,
-        template: {
-          select: {
-            name: true,
-            category: true,
-            channel: true
-          }
-        }
-      },
-      orderBy: { createdAt: 'desc' }
-    })
+    // For now, return empty array since template versioning isn't implemented in Convex yet
+    // TODO: Implement template versioning in Convex schema and create queries
+    const versions: any[] = [];
 
     return NextResponse.json(versions)
   } catch (error) {

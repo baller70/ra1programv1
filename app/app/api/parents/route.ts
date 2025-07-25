@@ -2,7 +2,8 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server'
-import { prisma } from '../../../lib/db'
+import { convexHttp } from '../../../lib/db'
+import { api } from '../../../convex/_generated/api'
 import { 
   requireAuth, 
   createErrorResponse, 
@@ -17,68 +18,31 @@ import {
 } from '../../../lib/validation'
 
 export async function GET(request: Request) {
-  // Define variables outside try block for error handling
-  let limit = 50
-  let offset = 0
-  
   try {
     // Temporarily disabled for testing: await requireAuth()
 
     const { searchParams } = new URL(request.url)
     const search = searchParams.get('search')
     const status = searchParams.get('status')
-    limit = parseInt(searchParams.get('limit') || '50')
-    offset = parseInt(searchParams.get('offset') || '0')
+    const limit = parseInt(searchParams.get('limit') || '50')
+    const page = Math.floor(parseInt(searchParams.get('offset') || '0') / limit) + 1
 
-    const where: any = {}
+    // Get parents from Convex
+    const result = await convexHttp.query(api.parents.getParents, {
+      page,
+      limit,
+      search: search || undefined,
+      status: status && status !== 'all' ? status : undefined,
+    });
 
-    if (search) {
-      where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { email: { contains: search, mode: 'insensitive' } }
-      ]
-    }
-
-    if (status && status !== 'all') {
-      where.status = status
-    }
-
-    const parents = await prisma.parent.findMany({
-      where,
-      include: {
-        payments: {
-          where: { status: 'overdue' },
-          select: { id: true, amount: true, dueDate: true }
-        },
-        contracts: {
-          where: { status: 'pending' },
-          select: { id: true, originalName: true }
-        },
-        _count: {
-          select: {
-            payments: true,
-            contracts: true,
-            messageLogs: true
-          }
-        }
-      },
-      orderBy: [
-        { status: 'asc' },
-        { name: 'asc' }
-      ],
-      take: limit,
-      skip: offset
-    })
-
-    const total = await prisma.parent.count({ where })
-
+    // Transform response to match expected format
     return NextResponse.json({
-      parents,
+      parents: result.parents,
       pagination: {
-        total,
-        limit,
-        offset,
-        hasMore: offset + limit < total
+        total: result.pagination.total,
+        limit: result.pagination.limit,
+        offset: (result.pagination.page - 1) * result.pagination.limit,
+        hasMore: result.pagination.page < result.pagination.pages
       }
     });
   } catch (error) {
@@ -120,10 +84,13 @@ export async function POST(request: Request) {
     const validatedData = validateData(CreateParentSchema, body)
     const sanitizedData = sanitizeParentData(validatedData)
 
-    // Check if email already exists
-    const existingParent = await prisma.parent.findUnique({
-      where: { email: sanitizedData.email }
-    })
+    // Check if email already exists - get all parents and check
+    const existingParents = await convexHttp.query(api.parents.getParents, {
+      page: 1,
+      limit: 1000, // Get all to check for duplicates
+    });
+
+    const existingParent = existingParents.parents.find(p => p.email === sanitizedData.email);
 
     if (existingParent) {
       return NextResponse.json(
@@ -132,14 +99,20 @@ export async function POST(request: Request) {
       )
     }
 
-    const parent = await prisma.parent.create({
-      data: {
-        ...sanitizedData,
-        status: 'active'
-      }
+    // Create parent in Convex
+    const parentId = await convexHttp.mutation(api.parents.createParent, {
+      name: sanitizedData.name,
+      email: sanitizedData.email,
+      phone: sanitizedData.phone,
+      address: sanitizedData.address,
+      emergencyContact: sanitizedData.emergencyContact,
+      emergencyPhone: sanitizedData.emergencyPhone,
+      status: 'active',
+      teamId: sanitizedData.teamId,
+      notes: sanitizedData.notes,
     });
 
-    return createSuccessResponse(parent, 201);
+    return createSuccessResponse({ _id: parentId }, 201);
   } catch (error) {
     console.error('Parent creation error:', error)
     

@@ -4,83 +4,45 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/api-utils'
 // Clerk auth
-import { prisma } from '../../../../lib/db'
+import { generateDashboardInsights as generateAIDashboardInsights } from '../../../../../lib/ai'
+import { ConvexHttpClient } from 'convex/browser'
+import { api } from '../../../../convex/_generated/api'
+
+const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 
 export async function GET() {
   try {
     // Temporarily disabled for testing: await requireAuth()
     
 
-    // Fetch comprehensive dashboard data
-    const [
-      totalParents,
-      totalRevenue,
-      overduePayments,
-      upcomingDues,
-      activeContracts,
-      recentMessages
-    ] = await Promise.all([
-      prisma.parent.count({ where: { status: 'active' } }),
-      prisma.payment.aggregate({
-        where: { status: 'paid' },
-        _sum: { amount: true }
-      }),
-      prisma.payment.count({ where: { status: 'overdue' } }),
-      prisma.payment.count({
-        where: {
-          status: 'pending',
-          dueDate: {
-            gte: new Date(),
-            lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // Next 7 days
-          }
-        }
-      }),
-      prisma.contract.count({ where: { status: 'signed' } }),
-      prisma.messageLog.count({
-        where: {
-          sentAt: {
-            gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) // Last 30 days
-          }
-        }
-      })
-    ])
+    // Fetch comprehensive dashboard data using Convex
+    const dashboardStats = await convex.query(api.dashboard.getDashboardStats)
 
     // Get recent activity for context
-    const recentPayments = await prisma.payment.findMany({
-      where: { status: 'paid' },
-      include: { parent: { select: { name: true } } },
-      orderBy: { paidAt: 'desc' },
-      take: 10
-    })
-
-    const recentContracts = await prisma.contract.findMany({
-      include: { parent: { select: { name: true } } },
-      orderBy: { createdAt: 'desc' },
-      take: 5
-    })
+    const recentActivity = await convex.query(api.dashboard.getRecentActivity)
 
     // Generate AI insights
     const insights = await generateDashboardInsights({
-      totalParents,
-      totalRevenue: totalRevenue._sum.amount || 0,
-      overduePayments,
-      upcomingDues,
-      activeContracts,
-      recentMessages,
-      recentPayments,
-      recentContracts
+      totalParents: dashboardStats.totalParents,
+      totalRevenue: dashboardStats.totalRevenue,
+      overduePayments: dashboardStats.overduePayments,
+      upcomingDues: dashboardStats.upcomingDues,
+      activeContracts: dashboardStats.activePaymentPlans,
+      recentMessages: dashboardStats.messagesSentThisMonth,
+             recentPayments: recentActivity || [],
+       recentContracts: []
     })
 
     return NextResponse.json({
       success: true,
       insights,
       metrics: {
-        totalParents,
-        totalRevenue: totalRevenue._sum.amount || 0,
-        overduePayments,
-        upcomingDues,
-        activeContracts,
-        recentMessages
+        totalParents: dashboardStats.totalParents,
+        totalRevenue: dashboardStats.totalRevenue,
+        overduePayments: dashboardStats.overduePayments,
+        upcomingDues: dashboardStats.upcomingDues,
+        activeContracts: dashboardStats.activePaymentPlans,
+        recentMessages: dashboardStats.messagesSentThisMonth
       },
       generatedAt: new Date()
     })
@@ -151,34 +113,14 @@ Provide strategic insights and actionable recommendations for program management
   ]
 
   try {
-    const response = await fetch('https://apps.abacus.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.ABACUSAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-4.1-mini',
-        messages: messages,
-        response_format: { type: "json_object" },
-        max_tokens: 2000,
-        temperature: 0.4
-      })
-    })
-
-    if (!response.ok) {
-      throw new Error(`AI API error: ${response.statusText}`)
-    }
-
-    const aiResponse = await response.json()
-    let content = aiResponse.choices[0].message.content
+    // Use OpenAI through our AI library
+    const aiResult = await generateAIDashboardInsights(data)
     
-    // Remove markdown code blocks if present
-    if (content.includes('```json')) {
-      content = content.replace(/```json\s*/g, '').replace(/\s*```/g, '')
+    if (!aiResult.success) {
+      throw new Error(aiResult.error || 'Failed to generate insights')
     }
     
-    return JSON.parse(content)
+    return aiResult.insights
   } catch (error) {
     console.error('Dashboard insights AI error:', error)
     return {

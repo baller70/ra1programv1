@@ -16,7 +16,7 @@ import {
   MapPin
 } from 'lucide-react'
 import Link from 'next/link'
-import { Parent } from '@prisma/client'
+import { Parent } from '../../../../lib/types'
 
 export default function EditParentPage() {
   const router = useRouter()

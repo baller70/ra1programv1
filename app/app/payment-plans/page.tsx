@@ -19,7 +19,7 @@ import {
   AlertCircle
 } from 'lucide-react'
 import Link from 'next/link'
-import { PaymentPlan, Parent } from '@prisma/client'
+import { PaymentPlan, Parent } from '../../../lib/types'
 
 type PaymentPlanWithRelations = PaymentPlan & {
   parent: Parent

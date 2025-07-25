@@ -7,12 +7,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from '@/components/ui/use-toast'
-import { CreditCard, Lock } from 'lucide-react'
+import { CreditCard, Lock, CheckCircle, ArrowLeft } from 'lucide-react'
 
 export default function CheckoutPage({ params }: { params: { id: string } }) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [loading, setLoading] = useState(false)
+  const [paymentSuccess, setPaymentSuccess] = useState(false)
+  const [redirectCountdown, setRedirectCountdown] = useState(5)
   
   // Get payment details from URL params
   const amount = searchParams.get('amount') || '0'
@@ -35,6 +37,18 @@ export default function CheckoutPage({ params }: { params: { id: string } }) {
     state: '',
     zipCode: ''
   })
+
+  // Countdown timer for redirect after successful payment
+  useEffect(() => {
+    if (paymentSuccess && redirectCountdown > 0) {
+      const timer = setTimeout(() => {
+        setRedirectCountdown(prev => prev - 1)
+      }, 1000)
+      return () => clearTimeout(timer)
+    } else if (paymentSuccess && redirectCountdown === 0) {
+      router.push(`/payments/${paymentId}?payment=success&plan=${paymentPlan}`)
+    }
+  }, [paymentSuccess, redirectCountdown, router, paymentId, paymentPlan])
 
   const formatCardNumber = (value: string) => {
     // Remove all non-digits
@@ -131,7 +145,6 @@ export default function CheckoutPage({ params }: { params: { id: string } }) {
         description: error instanceof Error ? error.message : 'Payment processing failed',
         variant: 'destructive',
       })
-    } finally {
       setLoading(false)
     }
   }
@@ -152,14 +165,12 @@ export default function CheckoutPage({ params }: { params: { id: string } }) {
     })
 
     if (response.ok) {
+      setLoading(false)
+      setPaymentSuccess(true)
       toast({
         title: 'Payment Successful!',
         description: `Full payment of $${amount} has been processed successfully.`,
       })
-      
-      setTimeout(() => {
-        router.push(`/payments/${paymentId}?payment=success&plan=full`)
-      }, 2000)
     } else {
       throw new Error('Failed to complete payment')
     }
@@ -185,19 +196,119 @@ export default function CheckoutPage({ params }: { params: { id: string } }) {
 
     if (response.ok) {
       const data = await response.json()
+      setLoading(false)
+      setPaymentSuccess(true)
       toast({
         title: 'Subscription Created!',
         description: `${paymentPlan === 'monthly' ? 'Monthly' : 'Quarterly'} payment plan activated. First payment of $${amount} processed.`,
       })
-      
-      setTimeout(() => {
-        router.push(`/payments/${paymentId}?payment=success&plan=${paymentPlan}&subscription=${data.subscriptionId}`)
-      }, 2000)
     } else {
       throw new Error('Failed to create subscription')
     }
   }
 
+  const handleBackToPayment = () => {
+    router.push(`/payments/${paymentId}`)
+  }
+
+  // Success confirmation screen
+  if (paymentSuccess) {
+    return (
+      <div className="min-h-screen bg-gray-50 py-8">
+        <div className="max-w-md mx-auto">
+          <Card>
+            <CardHeader className="text-center">
+              <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
+                <CheckCircle className="h-8 w-8 text-green-600" />
+              </div>
+              <CardTitle className="text-green-800">Payment Successful!</CardTitle>
+              <CardDescription>
+                Your payment has been processed successfully
+              </CardDescription>
+            </CardHeader>
+            
+            <CardContent className="space-y-6">
+              {/* Payment Confirmation Details */}
+              <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Amount Paid:</span>
+                    <span className="font-semibold text-green-800">${amount}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Payment For:</span>
+                    <span className="font-medium">{parentName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Payment Plan:</span>
+                    <span className="font-medium">
+                      {paymentPlan === 'full' && 'Full Payment'}
+                      {paymentPlan === 'monthly' && 'Monthly Plan'}
+                      {paymentPlan === 'quarterly' && 'Quarterly Plan'}
+                      {paymentPlan === 'custom' && 'Custom Plan'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Card Used:</span>
+                    <span className="font-medium">****{formData.cardNumber.slice(-4)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Transaction Date:</span>
+                    <span className="font-medium">{new Date().toLocaleDateString()}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Next Steps */}
+              <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                <h4 className="font-medium text-blue-800 mb-2">What's Next?</h4>
+                <ul className="text-sm text-blue-700 space-y-1">
+                  {paymentPlan === 'full' ? (
+                    <li>• Your payment is complete - no further action needed</li>
+                  ) : (
+                    <>
+                      <li>• Your {paymentPlan} payment plan is now active</li>
+                      <li>• Future payments will be processed automatically</li>
+                      <li>• You'll receive email reminders before each payment</li>
+                    </>
+                  )}
+                  <li>• A confirmation email has been sent to {formData.email}</li>
+                  <li>• You can view payment details anytime in your account</li>
+                </ul>
+              </div>
+
+              {/* Redirect Notice */}
+              <div className="text-center text-sm text-gray-600 bg-gray-50 p-3 rounded">
+                Redirecting to payment details in {redirectCountdown} seconds...
+              </div>
+
+              {/* Action Buttons */}
+              <div className="space-y-3">
+                <Button 
+                  onClick={handleBackToPayment}
+                  className="w-full"
+                  size="lg"
+                >
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  View Payment Details
+                </Button>
+                
+                <Button 
+                  variant="outline"
+                  onClick={() => router.push('/payments')}
+                  className="w-full"
+                >
+                  Back to All Payments
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
+  }
+
+  // Regular checkout form
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-md mx-auto">
@@ -247,6 +358,7 @@ export default function CheckoutPage({ params }: { params: { id: string } }) {
                   onChange={(e) => handleInputChange('cardNumber', e.target.value)}
                   maxLength={19}
                   required
+                  disabled={loading}
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   Use test card: 4242 4242 4242 4242
@@ -264,6 +376,7 @@ export default function CheckoutPage({ params }: { params: { id: string } }) {
                     onChange={(e) => handleInputChange('expiryDate', e.target.value)}
                     maxLength={5}
                     required
+                    disabled={loading}
                   />
                 </div>
                 <div>
@@ -275,6 +388,7 @@ export default function CheckoutPage({ params }: { params: { id: string } }) {
                     onChange={(e) => handleInputChange('cvv', e.target.value)}
                     maxLength={4}
                     required
+                    disabled={loading}
                   />
                 </div>
               </div>
@@ -288,6 +402,7 @@ export default function CheckoutPage({ params }: { params: { id: string } }) {
                   value={formData.cardholderName}
                   onChange={(e) => handleInputChange('cardholderName', e.target.value)}
                   required
+                  disabled={loading}
                 />
               </div>
 
@@ -301,6 +416,7 @@ export default function CheckoutPage({ params }: { params: { id: string } }) {
                   value={formData.email}
                   onChange={(e) => handleInputChange('email', e.target.value)}
                   required
+                  disabled={loading}
                 />
               </div>
 
@@ -317,7 +433,14 @@ export default function CheckoutPage({ params }: { params: { id: string } }) {
                 disabled={loading}
                 size="lg"
               >
-                {loading ? 'Processing...' : `Pay $${amount}`}
+                {loading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Processing Payment...
+                  </>
+                ) : (
+                  `Pay $${amount}`
+                )}
               </Button>
 
               {/* Test Instructions */}

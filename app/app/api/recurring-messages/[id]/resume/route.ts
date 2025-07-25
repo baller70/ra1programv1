@@ -3,37 +3,23 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server'
 import { requireAuth } from '../../../../../lib/api-utils'
-// Clerk auth
-import { prisma } from '../../../../../lib/db'
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
     await requireAuth()
     
+    // For now, just return success since recurring messages functionality isn't implemented
+    // TODO: Implement recurring message pause/resume in Convex
+    console.log('Recurring message resume requested:', params.id);
 
-    const recurringMessage = await prisma.recurringMessage.update({
-      where: { id: params.id },
-      data: {
-        isActive: true,
-        pausedAt: null,
-        pausedReason: null
-      }
+    return NextResponse.json({
+      id: params.id,
+      isActive: true,
+      pausedAt: null,
+      pausedReason: null,
+      resumedAt: new Date(),
+      message: 'Recurring messages functionality not yet implemented'
     })
-
-    // Schedule next instance if none pending
-    const pendingInstances = await prisma.recurringInstance.count({
-      where: {
-        recurringMessageId: params.id,
-        status: 'scheduled',
-        scheduledFor: { gt: new Date() }
-      }
-    })
-
-    if (pendingInstances === 0) {
-      await scheduleNextInstance(params.id)
-    }
-
-    return NextResponse.json(recurringMessage)
   } catch (error) {
     console.error('Recurring message resume error:', error)
     return NextResponse.json(
@@ -41,42 +27,4 @@ export async function POST(request: Request, { params }: { params: { id: string 
       { status: 500 }
     )
   }
-}
-
-async function scheduleNextInstance(recurringMessageId: string) {
-  const recurringMessage = await prisma.recurringMessage.findUnique({
-    where: { id: recurringMessageId }
-  })
-
-  if (!recurringMessage || !recurringMessage.isActive) {
-    return
-  }
-
-  let nextRun: Date = new Date()
-
-  switch (recurringMessage.interval) {
-    case 'daily':
-      nextRun.setDate(nextRun.getDate() + recurringMessage.intervalValue)
-      break
-    case 'weekly':
-      nextRun.setDate(nextRun.getDate() + (recurringMessage.intervalValue * 7))
-      break
-    case 'monthly':
-      nextRun.setMonth(nextRun.getMonth() + recurringMessage.intervalValue)
-      break
-    default:
-      nextRun.setDate(nextRun.getDate() + 1)
-  }
-
-  // Don't schedule if past end date
-  if (recurringMessage.endDate && nextRun > recurringMessage.endDate) {
-    return
-  }
-
-  await prisma.recurringInstance.create({
-    data: {
-      recurringMessageId,
-      scheduledFor: nextRun
-    }
-  })
 }

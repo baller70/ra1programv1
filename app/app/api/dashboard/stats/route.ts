@@ -2,7 +2,8 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server'
-import { prisma } from '../../../../lib/db'
+import { convexHttp } from '../../../../lib/db'
+import { api } from '../../../../convex/_generated/api'
 import { 
   requireAuth, 
   createErrorResponse, 
@@ -15,71 +16,8 @@ export async function GET() {
   try {
     await requireAuth()
 
-    // Get current date for calculations
-    const now = new Date()
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-    const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-
-    // Fetch all stats in parallel
-    const [
-      totalParents,
-      totalRevenue,
-      overduePayments,
-      upcomingDues,
-      activePaymentPlans,
-      messagesSentThisMonth
-    ] = await Promise.all([
-      // Total active parents
-      prisma.parent.count({
-        where: { status: 'active' }
-      }),
-
-      // Total revenue from paid payments
-      prisma.payment.aggregate({
-        _sum: { amount: true },
-        where: { status: 'paid' }
-      }),
-
-      // Overdue payments count
-      prisma.payment.count({
-        where: { status: 'overdue' }
-      }),
-
-      // Upcoming dues (next 30 days)
-      prisma.payment.count({
-        where: {
-          status: 'pending',
-          dueDate: {
-            gte: now,
-            lte: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
-          }
-        }
-      }),
-
-      // Active payment plans
-      prisma.paymentPlan.count({
-        where: { status: 'active' }
-      }),
-
-      // Messages sent this month
-      prisma.messageLog.count({
-        where: {
-          sentAt: {
-            gte: startOfMonth,
-            lt: startOfNextMonth
-          }
-        }
-      })
-    ])
-
-    const stats = {
-      totalParents,
-      totalRevenue: Number(totalRevenue._sum.amount) || 0,
-      overduePayments,
-      upcomingDues,
-      activePaymentPlans,
-      messagesSentThisMonth
-    }
+    // Get dashboard stats from Convex
+    const stats = await convexHttp.query(api.dashboard.getDashboardStats, {});
 
     return createSuccessResponse(stats)
   } catch (error) {

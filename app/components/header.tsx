@@ -3,7 +3,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { Bell, User, LogOut, Menu, X } from 'lucide-react'
+import { User, LogOut, Menu, X } from 'lucide-react'
 import { Button } from './ui/button'
 import {
   DropdownMenu,
@@ -12,7 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu'
-import { Badge } from './ui/badge'
+import { NotificationDropdown } from './ui/notification-dropdown'
 
 export function Header() {
   // Temporarily disabled for development - uncomment when Clerk is properly configured
@@ -32,6 +32,7 @@ export function Header() {
     { name: 'Payments', href: '/payments' },
     { name: 'Communication', href: '/communication' },
     { name: 'Contracts', href: '/contracts' },
+    { name: 'Settings', href: '/settings' },
   ]
 
   return (
@@ -63,12 +64,7 @@ export function Header() {
         {/* User Menu */}
         <div className="flex items-center space-x-4">
           {/* Notifications */}
-          <Button variant="ghost" size="sm" className="relative">
-            <Bell className="h-4 w-4" />
-            <Badge variant="destructive" className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 text-xs">
-              3
-            </Badge>
-          </Button>
+          <NotificationDropdown userId="dev-user" />
 
           {/* User Dropdown */}
           <DropdownMenu>
@@ -86,10 +82,6 @@ export function Header() {
                   </p>
                 </div>
               </div>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link href="/settings">Settings</Link>
-              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem className="cursor-pointer">
                 <LogOut className="mr-2 h-4 w-4" />

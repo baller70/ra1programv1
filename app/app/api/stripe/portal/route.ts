@@ -1,5 +1,8 @@
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '../../../../lib/db';
+import { convexHttp } from '../../../../lib/db';
+import { api } from '../../../../convex/_generated/api';
 import Stripe from 'stripe';
 
 function getStripe() {
@@ -19,19 +22,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Parent ID is required' }, { status: 400 });
     }
 
-    // Get parent with Stripe customer information
-    const parent = await prisma.parent.findUnique({
-      where: { id: parentId },
-      include: {
-        stripeCustomer: true
-      }
+    // Get parent from Convex
+    const parent = await convexHttp.query(api.parents.getParent, {
+      id: parentId as any
     });
 
     if (!parent) {
       return NextResponse.json({ error: 'Parent not found' }, { status: 404 });
     }
 
-    if (!parent.stripeCustomer?.stripeCustomerId) {
+    if (!parent.stripeCustomerId) {
       return NextResponse.json({ error: 'No Stripe customer found' }, { status: 404 });
     }
 
@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     try {
       // Create Stripe Customer Portal session
       const session = await stripe.billingPortal.sessions.create({
-        customer: parent.stripeCustomer.stripeCustomerId,
+        customer: parent.stripeCustomerId,
         return_url: returnUrl,
       });
 

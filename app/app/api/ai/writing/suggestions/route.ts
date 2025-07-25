@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server'
 import { requireAuth } from '../../../../../lib/api-utils'
 // Clerk auth
+import { generateWritingSuggestions } from '../../../../../../lib/ai'
 
 export async function POST(request: Request) {
   try {
@@ -33,34 +34,14 @@ export async function POST(request: Request) {
       }
     ]
 
-    const response = await fetch('https://apps.abacus.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.ABACUSAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-4.1-mini',
-        messages: messages,
-        response_format: { type: "json_object" },
-        max_tokens: 800,
-        temperature: 0.6
-      })
-    })
-
-    if (!response.ok) {
-      throw new Error(`AI API error: ${response.statusText}`)
-    }
-
-    const aiResponse = await response.json()
-    let content = aiResponse.choices[0].message.content
+    // Use OpenAI through our AI library
+    const aiResult = await generateWritingSuggestions(currentText)
     
-    // Remove markdown code blocks if present
-    if (content.includes('```json')) {
-      content = content.replace(/```json\s*/g, '').replace(/\s*```/g, '')
+    if (!aiResult.success) {
+      throw new Error(aiResult.error || 'Failed to generate suggestions')
     }
     
-    const suggestions = JSON.parse(content)
+    const suggestions = { alternatives: aiResult.suggestions }
 
     return NextResponse.json({
       success: true,

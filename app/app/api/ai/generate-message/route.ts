@@ -4,8 +4,12 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/api-utils'
 // Clerk auth
-import { prisma } from '../../../../lib/db'
 import { AIMessageRequest } from '../../../../lib/types'
+import { generateMessage } from '../../../../../lib/ai'
+import { ConvexHttpClient } from 'convex/browser'
+import { api } from '../../../../convex/_generated/api'
+
+const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 
 export async function POST(request: Request) {
   try {
@@ -18,50 +22,19 @@ export async function POST(request: Request) {
     // Fetch parent data if provided
     let parentData = null
     if (context.parentId) {
-      parentData = await prisma.parent.findUnique({
-        where: { id: context.parentId },
-        include: {
-          payments: { 
-            orderBy: { dueDate: 'desc' },
-            take: 5,
-            include: { reminders: true }
-          },
-          contracts: {
-            orderBy: { createdAt: 'desc' },
-            take: 3
-          },
-          paymentPlans: {
-            where: { status: 'active' },
-            include: { payments: true }
-          },
-          messageLogs: {
-            orderBy: { sentAt: 'desc' },
-            take: 5
-          }
-        }
-      })
+      parentData = await convex.query(api.parents.getParent, { id: context.parentId as any })
     }
 
     // Fetch payment data if provided
     let paymentData = null
     if (context.paymentId) {
-      paymentData = await prisma.payment.findUnique({
-        where: { id: context.paymentId },
-        include: {
-          parent: true,
-          paymentPlan: true,
-          reminders: true
-        }
-      })
+      paymentData = await convex.query(api.payments.getPayment, { id: context.paymentId as any })
     }
 
     // Fetch contract data if provided
     let contractData = null
     if (context.contractId) {
-      contractData = await prisma.contract.findUnique({
-        where: { id: context.contractId },
-        include: { parent: true }
-      })
+      contractData = await convex.query(api.contracts.getContract, { id: context.contractId as any })
     }
 
     // Build context for AI
@@ -101,34 +74,45 @@ Please provide both subject line and message body in JSON format:
       }
     ]
 
-    const response = await fetch('https://apps.abacus.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.ABACUSAI_API_KEY}`
+    // Map message types to OpenAI AI library format
+    const mapMessageType = (type: string) => {
+      switch (type) {
+        case 'reminder': return 'payment_reminder'
+        case 'overdue': return 'overdue_notice'
+        case 'welcome': return 'welcome'
+        case 'follow_up': return 'general'
+        case 'renewal': return 'general'
+        default: return 'general'
+      }
+    }
+
+    const mapTone = (tone: string) => {
+      switch (tone) {
+        case 'formal': return 'professional'
+        default: return tone as 'professional' | 'friendly' | 'urgent' | 'casual'
+      }
+    }
+
+    // Use OpenAI through our AI library
+    const aiResult = await generateMessage({
+      context: {
+        parentId: context.parentId,
+        paymentId: context.paymentId,
+        messageType: mapMessageType(context.messageType),
+        tone: mapTone(context.tone),
+        channel: 'email' // Default to email
       },
-      body: JSON.stringify({
-        model: 'gpt-4.1-mini',
-        messages: messages,
-        response_format: { type: "json_object" },
-        max_tokens: 2000,
-        temperature: 0.7
-      })
+      parentData,
+      paymentData,
+      customInstructions,
+      includePersonalization
     })
 
-    if (!response.ok) {
-      throw new Error(`AI API error: ${response.statusText}`)
+    if (!aiResult.success) {
+      throw new Error(aiResult.error || 'Failed to generate message')
     }
 
-    const aiResponse = await response.json()
-    let content = aiResponse.choices[0].message.content
-    
-    // Remove markdown code blocks if present
-    if (content.includes('```json')) {
-      content = content.replace(/```json\s*/g, '').replace(/\s*```/g, '')
-    }
-    
-    const generatedContent = JSON.parse(content)
+    const generatedContent = aiResult.message
 
     return NextResponse.json({
       success: true,

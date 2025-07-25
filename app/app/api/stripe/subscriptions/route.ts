@@ -1,5 +1,8 @@
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '../../../../lib/db';
+import { convexHttp } from '../../../../lib/db';
+import { api } from '../../../../convex/_generated/api';
 import Stripe from 'stripe';
 
 function getStripe() {
@@ -19,15 +22,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Parent ID is required' }, { status: 400 });
     }
 
-    const parent = await prisma.parent.findUnique({
-      where: { id: parentId },
-      include: {
-        stripeCustomer: {
-          include: {
-            subscriptions: true
-          }
-        }
-      }
+    // Get parent from Convex
+    const parent = await convexHttp.query(api.parents.getParent, {
+      id: parentId as any
     });
 
     if (!parent) {
@@ -38,7 +35,7 @@ export async function POST(request: NextRequest) {
 
     if (action === 'create') {
       // Create or get Stripe customer
-      let stripeCustomerId = parent.stripeCustomer?.stripeCustomerId;
+      let stripeCustomerId = parent.stripeCustomerId;
       
       if (!stripeCustomerId) {
         const stripeCustomer = await stripe.customers.create({
@@ -46,26 +43,14 @@ export async function POST(request: NextRequest) {
           name: parent.name,
           phone: parent.phone || undefined,
           metadata: {
-            parentId: parent.id
+            parentId: parent._id
           }
         });
 
-        // Create or update StripeCustomer record
-        const customerRecord = await prisma.stripeCustomer.upsert({
-          where: { parentId: parent.id },
-          create: {
-            stripeCustomerId: stripeCustomer.id,
-            email: stripeCustomer.email!,
-            name: stripeCustomer.name || parent.name,
-            phone: stripeCustomer.phone || parent.phone,
-            parentId: parent.id,
-          },
-          update: {
-            stripeCustomerId: stripeCustomer.id,
-            email: stripeCustomer.email!,
-            name: stripeCustomer.name || parent.name,
-            phone: stripeCustomer.phone || parent.phone,
-          }
+        // Update parent with Stripe customer ID in Convex
+        await convexHttp.mutation(api.parents.updateParent, {
+          id: parent._id,
+          stripeCustomerId: stripeCustomer.id
         });
 
         stripeCustomerId = stripeCustomer.id;
@@ -78,14 +63,14 @@ export async function POST(request: NextRequest) {
         payment_method_types: ['card'],
         line_items: [
           {
-            price: priceId || process.env.STRIPE_DEFAULT_PRICE_ID, // You'll need to set this
+            price: priceId || process.env.STRIPE_DEFAULT_PRICE_ID,
             quantity: 1,
           },
         ],
         success_url: `${process.env.NEXT_PUBLIC_BASE_URL}/payments/${parentId}?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL}/payments/${parentId}`,
         metadata: {
-          parentId: parent.id,
+          parentId: parent._id,
         },
       });
 
@@ -124,14 +109,8 @@ export async function PATCH(request: NextRequest) {
         cancel_at_period_end: true,
       });
 
-      // Update database
-      await prisma.stripeSubscription.updateMany({
-        where: { stripeSubscriptionId: subscriptionId },
-        data: { 
-          cancelAt: new Date(subscription.cancel_at * 1000), // Convert from Unix timestamp
-          updatedAt: new Date()
-        }
-      });
+      // TODO: Update subscription status in Convex when subscription table is implemented
+      console.log('Subscription cancelled:', subscription.id);
 
       return NextResponse.json({ 
         success: true,
@@ -149,14 +128,8 @@ export async function PATCH(request: NextRequest) {
         cancel_at_period_end: false,
       });
 
-      // Update database
-      await prisma.stripeSubscription.updateMany({
-        where: { stripeSubscriptionId: subscriptionId },
-        data: { 
-          cancelAtPeriodEnd: false,
-          updatedAt: new Date()
-        }
-      });
+      // TODO: Update subscription status in Convex when subscription table is implemented
+      console.log('Subscription reactivated:', subscription.id);
 
       return NextResponse.json({ 
         success: true,

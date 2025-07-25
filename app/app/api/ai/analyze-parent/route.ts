@@ -4,7 +4,11 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/api-utils'
 // Clerk auth
-import { prisma } from '../../../../lib/db'
+import { analyzeParent } from '../../../../../lib/ai'
+import { ConvexHttpClient } from 'convex/browser'
+import { api } from '../../../../convex/_generated/api'
+
+const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 
 export async function POST(request: Request) {
   try {
@@ -21,25 +25,8 @@ export async function POST(request: Request) {
     }
 
     // Fetch comprehensive parent data for all parents
-    const parents = await prisma.parent.findMany({
-      where: { id: { in: ids } },
-      include: {
-        payments: {
-          orderBy: { dueDate: 'desc' },
-          include: { reminders: true }
-        },
-        contracts: {
-          orderBy: { createdAt: 'desc' }
-        },
-        paymentPlans: {
-          include: { payments: true }
-        },
-        messageLogs: {
-          orderBy: { sentAt: 'desc' },
-          take: 20
-        }
-      }
-    })
+    const parentsResult = await convex.query(api.parents.getParents, {}) as any
+    const parents = parentsResult.parents || []
 
     if (!parents.length) {
       return NextResponse.json({ error: 'No parents found' }, { status: 404 })
@@ -164,34 +151,14 @@ Provide comprehensive analysis and actionable recommendations.`
   ]
 
   try {
-    const response = await fetch('https://apps.abacus.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.ABACUSAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-4.1-mini',
-        messages: messages,
-        response_format: { type: "json_object" },
-        max_tokens: 1500,
-        temperature: 0.3
-      })
-    })
-
-    if (!response.ok) {
-      throw new Error(`AI API error: ${response.statusText}`)
-    }
-
-    const aiResponse = await response.json()
-    let content = aiResponse.choices[0].message.content
+    // Use OpenAI through our AI library
+    const aiResult = await analyzeParent(parent)
     
-    // Remove markdown code blocks if present
-    if (content.includes('```json')) {
-      content = content.replace(/```json\s*/g, '').replace(/\s*```/g, '')
+    if (!aiResult.success) {
+      throw new Error(aiResult.error || 'Failed to analyze parent')
     }
     
-    return JSON.parse(content)
+    return aiResult.analysis
   } catch (error) {
     console.error('AI analysis error:', error)
     return {

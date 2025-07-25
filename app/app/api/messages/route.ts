@@ -3,57 +3,39 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server'
 import { requireAuth } from '../../../lib/api-utils'
-// Clerk auth
-import { prisma } from '../../../lib/db'
+import { convexHttp } from '../../../lib/db'
+import { api } from '../../../convex/_generated/api'
+import { Id } from '../../../convex/_generated/dataModel'
+import { Resend } from 'resend'
+
+const resend = new Resend(process.env.RESEND_API_KEY)
 
 export async function GET(request: Request) {
   try {
     await requireAuth()
     
-
     const { searchParams } = new URL(request.url)
+    const page = parseInt(searchParams.get('page') || '1')
+    const limit = parseInt(searchParams.get('limit') || '50')
     const parentId = searchParams.get('parentId')
     const channel = searchParams.get('channel')
     const status = searchParams.get('status')
-    const limit = parseInt(searchParams.get('limit') || '50')
-    const offset = parseInt(searchParams.get('offset') || '0')
+    const type = searchParams.get('type')
+    const dateFrom = searchParams.get('dateFrom')
+    const dateTo = searchParams.get('dateTo')
 
-    const where: any = {}
-
-    if (parentId) {
-      where.parentId = parentId
-    }
-
-    if (channel) {
-      where.channel = channel
-    }
-
-    if (status) {
-      where.status = status
-    }
-
-    const messages = await prisma.messageLog.findMany({
-      where,
-      include: {
-        parent: true,
-        template: true
-      },
-      orderBy: { sentAt: 'desc' },
-      take: limit,
-      skip: offset
+    const result = await convexHttp.query(api.messageLogs.getMessageLogs, {
+      page,
+      limit,
+      parentId,
+      status,
+      type,
+      channel,
+      dateFrom: dateFrom ? parseInt(dateFrom) : undefined,
+      dateTo: dateTo ? parseInt(dateTo) : undefined,
     })
 
-    const total = await prisma.messageLog.count({ where })
-
-    return NextResponse.json({
-      messages,
-      pagination: {
-        total,
-        limit,
-        offset,
-        hasMore: offset + limit < total
-      }
-    })
+    return NextResponse.json(result)
   } catch (error) {
     console.error('Messages fetch error:', error)
     return NextResponse.json(
@@ -65,177 +47,148 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    // Temporarily disabled for testing: await requireAuth()
+    await requireAuth()
     
-
     const body = await request.json()
-    
-    // Handle bulk AI-generated messages
-    if (body.messages && Array.isArray(body.messages)) {
-      const results = []
-      
-      for (const msg of body.messages) {
-        try {
-          const messageLog = await prisma.messageLog.create({
-            data: {
-              parentId: msg.parentId,
-              subject: 'AI Generated Message',
-              body: msg.message,
-              channel: 'email',
-              status: 'sent',
-              sentAt: new Date(),
-              metadata: {
-                type: msg.type || 'ai_generated',
-                parentEmail: msg.parentEmail,
-                parentName: msg.parentName,
-                sentBy: 'ai-system'
-              }
-            },
-            include: {
-              parent: true
-            }
-          })
-          
-          results.push({
-            success: true,
-            messageId: messageLog.id,
-            parentId: msg.parentId,
-            parentName: msg.parentName
-          })
-        } catch (error) {
-          console.error(`Failed to send message to ${msg.parentName}:`, error)
-          results.push({
-            success: false,
-            parentId: msg.parentId,
-            parentName: msg.parentName,
-            error: error instanceof Error ? error.message : 'Unknown error'
-          })
-        }
-      }
-      
-      const successCount = results.filter(r => r.success).length
-      const failCount = results.filter(r => !r.success).length
-      
-      return NextResponse.json({
-        success: true,
-        totalMessages: body.messages.length,
-        successCount,
-        failCount,
-        results
-      })
-    }
-
-    // Original single message logic
     const {
+      parentId,
       templateId,
       subject,
+      message,
       body: messageBody,
-      channel,
-      recipients,
-      scheduledFor,
-      variables = {}
+      content,
+      method = 'email',
+      channel = 'email',
+      type = 'payment_reminder',
+      installmentId,
+      scheduledFor
     } = body
 
-    // If scheduled for future, create scheduled message
-    if (scheduledFor && new Date(scheduledFor) > new Date()) {
-      const scheduledMessage = await prisma.scheduledMessage.create({
-        data: {
-          templateId,
-          subject,
-          body: messageBody,
-          channel,
-          recipients,
-          scheduledFor: new Date(scheduledFor),
-          createdBy: 'system',
-          metadata: { variables }
-        }
-      })
+    // Handle different parameter names from AI reminder
+    const finalMessage = message || messageBody || content
+    const finalChannel = method || channel
+    const finalSubject = subject || 'Payment Reminder'
 
-      return NextResponse.json({ 
-        scheduled: true, 
-        messageId: scheduledMessage.id 
-      })
+    // Basic validation
+    if (!parentId || !finalMessage) {
+      return NextResponse.json(
+        { error: 'Parent ID and message content are required' },
+        { status: 400 }
+      )
     }
 
-    // Send immediately
-    const results = []
-    const errors = []
+    // Get parent information for sending
+    const parent = await convexHttp.query(api.parents.getParent, { id: parentId as Id<"parents"> })
+    if (!parent) {
+      return NextResponse.json(
+        { error: 'Parent not found' },
+        { status: 404 }
+      )
+    }
 
-    for (const parentId of recipients) {
-      try {
-        // Get parent info for variable replacement
-        const parent = await prisma.parent.findUnique({
-          where: { id: parentId }
-        })
-
-        if (!parent) {
-          errors.push(`Parent not found: ${parentId}`)
-          continue
-        }
-
-        // Replace variables in subject and body
-        let processedSubject = subject || ''
-        let processedBody = messageBody || ''
-
-        const templateVariables = {
-          parentName: parent.name,
-          parentEmail: parent.email,
-          programName: 'Rise as One Yearly Program',
-          ...variables
-        }
-
-        Object.entries(templateVariables).forEach(([key, value]) => {
-          const regex = new RegExp(`{${key}}`, 'g')
-          processedSubject = processedSubject.replace(regex, String(value))
-          processedBody = processedBody.replace(regex, String(value))
-        })
-
-        // Create message log
-        const messageLog = await prisma.messageLog.create({
-          data: {
-            parentId,
-            templateId,
-            subject: processedSubject,
-            body: processedBody,
-            channel,
-            status: 'sent', // In a real app, this would be 'pending' until actually sent
-            sentAt: new Date(),
-            metadata: { originalVariables: variables }
-          }
-        })
-
-        // Update template usage count
-        if (templateId) {
-          await prisma.template.update({
-            where: { id: templateId },
-            data: { usageCount: { increment: 1 } }
-          })
-        }
-
-        results.push({
-          parentId,
-          messageLogId: messageLog.id,
-          status: 'sent'
-        })
-
-      } catch (error) {
-        console.error(`Failed to send message to ${parentId}:`, error)
-        errors.push(`Failed to send to parent ${parentId}`)
+    // Create message log entry
+    const messageId = await convexHttp.mutation(api.messageLogs.createMessageLog, {
+      parentId,
+      templateId,
+      subject: finalSubject,
+      body: finalMessage,
+      content: finalMessage,
+      channel: finalChannel,
+      type,
+      status: 'sending',
+      sentAt: scheduledFor || Date.now(),
+      metadata: {
+        installmentId,
+        method: finalChannel,
+        aiGenerated: true
       }
+    })
+
+    // Send the actual message
+    let sendResult = null
+    try {
+      if (finalChannel === 'email' && parent.email) {
+        // Send email using Resend
+        sendResult = await resend.emails.send({
+          from: process.env.RESEND_FROM_EMAIL || 'noreply@thebasketballfactoryinc.com',
+          to: [parent.email],
+          subject: finalSubject,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #333;">Payment Reminder</h2>
+              <p>Dear ${parent.name},</p>
+              <div style="background-color: #f9f9f9; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                ${finalMessage.replace(/\n/g, '<br>')}
+              </div>
+              <p>Best regards,<br>The Basketball Factory Inc.</p>
+            </div>
+          `,
+          text: `Dear ${parent.name},\n\n${finalMessage}\n\nBest regards,\nThe Basketball Factory Inc.`
+        })
+
+        // Update message status to sent
+        await convexHttp.mutation(api.messageLogs.updateMessageStatus, {
+          id: messageId,
+          status: 'sent',
+          deliveredAt: Date.now(),
+        })
+
+        // Create analytics entry
+        await convexHttp.mutation(api.messageLogs.createMessageAnalytics, {
+          messageLogId: messageId,
+          parentId: parentId as Id<"parents">,
+          channel: finalChannel,
+          messageType: type,
+        })
+
+      } else if (finalChannel === 'sms' && parent.phone) {
+        // SMS sending would go here (placeholder for now)
+        console.log('SMS sending not yet implemented:', {
+          to: parent.phone,
+          message: finalMessage
+        })
+        
+        // Update message status
+        await convexHttp.mutation(api.messageLogs.updateMessageStatus, {
+          id: messageId,
+          status: 'sent',
+          deliveredAt: Date.now(),
+        })
+
+        sendResult = { success: true, method: 'sms' }
+      } else {
+        throw new Error(`No ${finalChannel} contact information available for parent`)
+      }
+
+    } catch (sendError) {
+      console.error('Message sending error:', sendError)
+      
+      // Update message status to failed
+      await convexHttp.mutation(api.messageLogs.updateMessageStatus, {
+        id: messageId,
+        status: 'failed',
+        failureReason: sendError instanceof Error ? sendError.message : 'Unknown error',
+        errorMessage: sendError
+      })
+
+      return NextResponse.json(
+        { error: 'Failed to send message: ' + (sendError instanceof Error ? sendError.message : 'Unknown error') },
+        { status: 500 }
+      )
     }
 
     return NextResponse.json({
       success: true,
-      sent: results.length,
-      failed: errors.length,
-      errors,
-      messageLogIds: results.map(r => r.messageLogId)
+      messageId,
+      sendResult,
+      message: `Payment reminder sent via ${finalChannel} successfully`,
+      recipient: finalChannel === 'email' ? parent.email : parent.phone
     })
 
   } catch (error) {
-    console.error('Message sending error:', error)
+    console.error('Message creation error:', error)
     return NextResponse.json(
-      { error: 'Failed to send messages' },
+      { error: 'Failed to create and send message' },
       { status: 500 }
     )
   }

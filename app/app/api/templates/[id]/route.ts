@@ -3,8 +3,8 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/api-utils'
-// Clerk auth
-import { prisma } from '../../../../lib/db'
+import { convexHttp } from '../../../../lib/db'
+import { api } from '../../../../convex/_generated/api'
 
 export async function GET(
   request: Request,
@@ -13,38 +13,25 @@ export async function GET(
   try {
     await requireAuth()
     
-
-    const template = await prisma.template.findUnique({
-      where: { id: params.id },
-      include: {
-        messageLogs: {
-          take: 10,
-          orderBy: { sentAt: 'desc' },
-          include: {
-            parent: {
-              select: {
-                name: true,
-                email: true
-              }
-            }
-          }
-        },
-        scheduledMessages: {
-          orderBy: { scheduledFor: 'asc' },
-          take: 10
-        },
-        versions: {
-          orderBy: { createdAt: 'desc' },
-          take: 5
-        }
-      }
-    })
+    // Get template from Convex
+    const template = await convexHttp.query(api.templates.getTemplate, {
+      id: params.id as any
+    });
 
     if (!template) {
       return NextResponse.json({ error: 'Template not found' }, { status: 404 })
     }
 
-    return NextResponse.json(template)
+    // For now, return template without related data since those queries aren't implemented
+    // TODO: Implement message logs, scheduled messages, and versions queries
+    const templateWithRelations = {
+      ...template,
+      messageLogs: [],
+      scheduledMessages: [],
+      versions: []
+    };
+
+    return NextResponse.json(templateWithRelations)
   } catch (error) {
     console.error('Template fetch error:', error)
     return NextResponse.json(
@@ -61,7 +48,6 @@ export async function PUT(
   try {
     await requireAuth()
     
-
     const body = await request.json()
     const {
       name,
@@ -73,21 +59,24 @@ export async function PUT(
       isActive
     } = body
 
-    const template = await prisma.template.update({
-      where: { id: params.id },
-      data: {
-        name,
-        subject,
-        body: templateBody,
-        category,
-        channel,
-        variables: variables || [],
-        isActive: isActive !== undefined ? isActive : true,
-        updatedAt: new Date()
-      }
-    })
+    // Update template in Convex
+    await convexHttp.mutation(api.templates.updateTemplate, {
+      id: params.id as any,
+      name,
+      subject,
+      body: templateBody,
+      category,
+      channel,
+      variables: variables || [],
+      isActive: isActive !== undefined ? isActive : true
+    });
 
-    return NextResponse.json(template)
+    // Get updated template
+    const updatedTemplate = await convexHttp.query(api.templates.getTemplate, {
+      id: params.id as any
+    });
+
+    return NextResponse.json(updatedTemplate)
   } catch (error) {
     console.error('Template update error:', error)
     return NextResponse.json(
@@ -104,15 +93,11 @@ export async function DELETE(
   try {
     await requireAuth()
     
-
     // Soft delete by setting isActive to false
-    await prisma.template.update({
-      where: { id: params.id },
-      data: {
-        isActive: false,
-        updatedAt: new Date()
-      }
-    })
+    await convexHttp.mutation(api.templates.updateTemplate, {
+      id: params.id as any,
+      isActive: false
+    });
 
     return NextResponse.json({ success: true, message: 'Template deleted successfully' })
   } catch (error) {

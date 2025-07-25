@@ -3,73 +3,32 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server'
 import { requireAuth } from '../../../lib/api-utils'
-// Clerk auth
-import { prisma } from '../../../lib/db'
+import { convexHttp } from '../../../lib/db'
+import { api } from '../../../convex/_generated/api'
+import { Id } from '../../../convex/_generated/dataModel'
 
 export async function GET(request: Request) {
   try {
     await requireAuth()
     
-
     const { searchParams } = new URL(request.url)
-    const category = searchParams.get('category')
-    const priority = searchParams.get('priority')
-    const isExecuted = searchParams.get('executed')
+    const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '50')
-    const offset = parseInt(searchParams.get('offset') || '0')
+    const parentId = searchParams.get('parentId')
+    const type = searchParams.get('type')
+    const priority = searchParams.get('priority')
+    const status = searchParams.get('status')
 
-    const where: any = {}
-
-    if (category && category !== 'all') {
-      where.category = category
-    }
-
-    if (priority && priority !== 'all') {
-      where.priority = priority
-    }
-
-    if (isExecuted !== null && isExecuted !== undefined) {
-      where.isExecuted = isExecuted === 'true'
-    }
-
-    // Don't show dismissed recommendations by default
-    if (!searchParams.get('includeDismissed')) {
-      where.dismissedAt = null
-    }
-
-    // Don't show expired recommendations
-    where.OR = [
-      { expiresAt: null },
-      { expiresAt: { gt: new Date() } }
-    ]
-
-    const recommendations = await prisma.aIRecommendation.findMany({
-      where,
-      include: {
-        actions: {
-          orderBy: { order: 'asc' }
-        }
-      },
-      orderBy: [
-        { priority: 'desc' },
-        { confidence: 'desc' },
-        { createdAt: 'desc' }
-      ],
-      take: limit,
-      skip: offset
+    const result = await convexHttp.query(api.aiRecommendations.getAiRecommendations, {
+      page,
+      limit,
+      parentId: parentId ? parentId as Id<"parents"> : undefined,
+      type: type || undefined,
+      priority: priority || undefined,
+      status: status || undefined,
     })
 
-    const total = await prisma.aIRecommendation.count({ where })
-
-    return NextResponse.json({
-      recommendations,
-      pagination: {
-        total,
-        limit,
-        offset,
-        hasMore: offset + limit < total
-      }
-    })
+    return NextResponse.json(result)
   } catch (error) {
     console.error('AI recommendations fetch error:', error)
     return NextResponse.json(
@@ -83,75 +42,48 @@ export async function POST(request: Request) {
   try {
     await requireAuth()
     
-
     const body = await request.json()
     const {
+      parentId,
+      paymentId,
+      contractId,
       type,
-      category,
+      priority,
       title,
       description,
-      priority,
-      confidence,
-      expectedImpact,
-      targetEntityType,
-      targetEntityId,
-      context,
-      actions,
-      autoExecutable,
-      expiresAt
+      recommendation,
+      aiConfidence,
+      dataPoints,
+      actions
     } = body
 
-    if (!type || !category || !title || !description) {
-      return NextResponse.json({ error: 'Type, category, title, and description are required' }, { status: 400 })
+    // Basic validation
+    if (!type || !title || !description || !recommendation) {
+      return NextResponse.json(
+        { error: 'Type, title, description, and recommendation are required' },
+        { status: 400 }
+      )
     }
 
-    // Create the recommendation
-    const recommendation = await prisma.aIRecommendation.create({
-      data: {
-        type,
-        category,
-        title,
-        description,
-        priority: priority || 'medium',
-        confidence: confidence || 75,
-        expectedImpact: expectedImpact || 'medium',
-        targetEntityType,
-        targetEntityId: targetEntityId || null,
-        context: context || {},
-        actionable: true,
-        autoExecutable: autoExecutable || false,
-        expiresAt: expiresAt ? new Date(expiresAt) : null
-      }
+    const recommendationId = await convexHttp.mutation(api.aiRecommendations.createAiRecommendation, {
+      parentId: parentId ? parentId as Id<"parents"> : undefined,
+      paymentId: paymentId ? paymentId as Id<"payments"> : undefined,
+      contractId: contractId ? contractId as Id<"contracts"> : undefined,
+      type,
+      priority: priority || 'normal',
+      title,
+      description,
+      recommendation,
+      aiConfidence: aiConfidence || 85,
+      dataPoints: dataPoints || {},
+      actions: actions || [],
     })
 
-    // Create associated actions
-    if (actions && actions.length > 0) {
-      const actionData = actions.map((action: any, index: number) => ({
-        recommendationId: recommendation.id,
-        actionType: action.actionType,
-        title: action.title,
-        description: action.description,
-        parameters: action.parameters || {},
-        order: action.order || index + 1,
-        isRequired: action.isRequired !== false
-      }))
-
-      await prisma.aIRecommendationAction.createMany({
-        data: actionData
-      })
-    }
-
-    // Get the complete recommendation with actions
-    const completeRecommendation = await prisma.aIRecommendation.findUnique({
-      where: { id: recommendation.id },
-      include: {
-        actions: {
-          orderBy: { order: 'asc' }
-        }
-      }
+    return NextResponse.json({
+      success: true,
+      recommendationId,
+      message: 'AI recommendation created successfully'
     })
-
-    return NextResponse.json(completeRecommendation)
   } catch (error) {
     console.error('AI recommendation creation error:', error)
     return NextResponse.json(

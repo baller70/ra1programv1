@@ -9,6 +9,7 @@ import Link from 'next/link'
 import { Button } from '../../../components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card'
 import { Badge } from '../../../components/ui/badge'
+import { Input } from '../../../components/ui/input'
 import { useToast } from '../../../hooks/use-toast'
 import { 
   CreditCard, 
@@ -32,10 +33,16 @@ import {
   Settings,
   RefreshCw,
   Loader2,
-  Plus
+  Plus,
+  History,
+  PlusCircle
 } from 'lucide-react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../../../components/ui/collapsible'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select'
+import { PaymentProgress } from '../../../components/ui/payment-progress'
+import { ModifyScheduleDialog } from '../../../components/ui/modify-schedule-dialog'
+import { AiPaymentReminderDialog } from '../../../components/ui/ai-payment-reminder-dialog'
+import { ReminderReviewDialog } from '../../../components/ui/reminder-review-dialog'
 import { AppLayout } from '../../../components/app-layout'
 
 interface Payment {
@@ -213,7 +220,11 @@ export default function PaymentDetailPage() {
   const paymentHistoryData = useQuery(api.payments.getPaymentHistory, { 
     paymentId: params.id as Id<"payments"> 
   })
+  const paymentProgress = useQuery(api.paymentInstallments.getPaymentProgress, {
+    parentPaymentId: params.id as Id<"payments">
+  })
   const updatePayment = useMutation(api.payments.updatePayment)
+  const modifyPaymentSchedule = useMutation(api.paymentInstallments.modifyPaymentSchedule)
   
   const [communicationHistory, setCommunicationHistory] = useState<CommunicationRecord[]>([])
   const [loading, setLoading] = useState(false)
@@ -232,21 +243,60 @@ export default function PaymentDetailPage() {
   const [customInstallments, setCustomInstallments] = useState<number>(1)
   const [checkDetails, setCheckDetails] = useState({ checkNumbers: "", startDate: "" })
   const [cashDetails, setCashDetails] = useState({ receiptNumber: "", paidDate: "" })
+  const [customAmount, setCustomAmount] = useState<string>("")
+  const [customInstallmentCount, setCustomInstallmentCount] = useState<number>(1)
+  const [customPaymentFrequency, setCustomPaymentFrequency] = useState<number>(1)
 
   // Collapsible state
   const [isPaymentHistoryOpen, setIsPaymentHistoryOpen] = useState(false)
   const [isCommunicationHistoryOpen, setIsCommunicationHistoryOpen] = useState(true)
+  
+  // Modify schedule dialog state
+  const [modifyScheduleOpen, setModifyScheduleOpen] = useState(false)
+  
+  // AI reminder dialog state
+  const [aiReminderOpen, setAiReminderOpen] = useState(false)
+  const [selectedInstallment, setSelectedInstallment] = useState<any>(null)
+
+  // Send reminder dialog state
+  const [sendReminderOpen, setSendReminderOpen] = useState(false)
+  const [reminderMessage, setReminderMessage] = useState('')
 
   // Handle payment success callback
   useEffect(() => {
     const paymentStatus = searchParams.get('payment')
+    const paymentPlan = searchParams.get('plan')
+    const subscriptionId = searchParams.get('subscription')
+    
     if (paymentStatus === 'success') {
+      // Show detailed success message based on payment plan
+      let title = 'Payment Successful!'
+      let description = 'Your payment has been processed successfully.'
+      
+      if (paymentPlan === 'full') {
+        title = '🎉 Full Payment Complete!'
+        description = 'Your full program payment has been processed. You\'re all set!'
+      } else if (paymentPlan === 'monthly') {
+        title = '📅 Monthly Plan Activated!'
+        description = 'Your monthly payment plan is now active. First payment processed successfully.'
+      } else if (paymentPlan === 'quarterly') {
+        title = '📊 Quarterly Plan Activated!'
+        description = 'Your quarterly payment plan is now active. First payment processed successfully.'
+      } else if (paymentPlan === 'custom') {
+        title = '⚙️ Custom Plan Activated!'
+        description = 'Your custom payment plan is now active. First payment processed successfully.'
+      }
+      
       toast({
-        title: 'Payment Successful!',
-        description: 'Your payment has been processed successfully.',
+        title,
+        description,
+        duration: 5000, // Show for 5 seconds
       })
-      // Remove the query parameter
-      router.replace(`/payments/${params.id}`)
+      
+      // Clean up URL parameters after showing the toast
+      setTimeout(() => {
+        router.replace(`/payments/${params.id}`, { scroll: false })
+      }, 1000)
     }
   }, [searchParams, toast, router, params.id])
 
@@ -318,7 +368,7 @@ export default function PaymentDetailPage() {
   ]
 
   useEffect(() => {
-    if (payment?.parent?.id) {
+    if (payment?.parent?._id) {
       fetchCommunicationHistory()
     }
   }, [payment?.parentId])
@@ -341,6 +391,92 @@ export default function PaymentDetailPage() {
     }
   }
 
+  const handleModifySchedule = async (modifiedSchedule: Array<{
+    installmentId?: Id<"paymentInstallments">
+    amount: number
+    dueDate: number
+    installmentNumber: number
+  }>) => {
+    if (!payment) return
+    
+    try {
+      await modifyPaymentSchedule({
+        parentPaymentId: payment._id,
+        newSchedule: modifiedSchedule
+      })
+      
+      toast({
+        title: 'Schedule Updated',
+        description: 'Payment schedule has been successfully modified.',
+      })
+    } catch (error) {
+      console.error('Error modifying schedule:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to update payment schedule. Please try again.',
+        variant: 'destructive',
+      })
+      throw error // Re-throw to let the dialog handle it
+    }
+  }
+
+  const handleAiReminder = (installment: any) => {
+    setSelectedInstallment(installment)
+    setAiReminderOpen(true)
+  }
+
+  const handleSendAiReminder = async (message: string, method: 'email' | 'sms') => {
+    if (!payment || !selectedInstallment) return
+
+    try {
+      const response = await fetch('/api/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          parentId: payment.parentId,
+          message: message,
+          method: method,
+          type: 'payment_reminder',
+          installmentId: selectedInstallment._id
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to send reminder')
+      }
+
+      const result = await response.json()
+
+      // Enhanced success confirmation
+      toast({
+        title: '✅ AI Reminder Sent Successfully!',
+        description: `Payment reminder sent to ${payment.parent?.name || 'Parent'} via ${method.toUpperCase()} for installment #${selectedInstallment.installmentNumber} ($${payment.amount}).`,
+        duration: 5000, // Show for 5 seconds
+      })
+
+      // Optional: You could add a visual indicator or update UI state here
+      console.log('AI Reminder sent successfully:', {
+        parentName: payment.parent?.name,
+        method: method,
+        amount: payment.amount,
+        installment: selectedInstallment.installmentNumber,
+        messageId: result.messageId
+      })
+
+    } catch (error) {
+      console.error('Error sending reminder:', error)
+      toast({
+        title: '❌ Failed to Send AI Reminder',
+        description: `Could not send payment reminder to ${payment.parent?.name || 'Parent'}. Please try again or contact support.`,
+        variant: 'destructive',
+        duration: 7000, // Show error longer
+      })
+      throw error
+    }
+  }
+
   const handleMarkAsPaid = async () => {
     if (!payment) return
     
@@ -354,7 +490,7 @@ export default function PaymentDetailPage() {
       if (result) {
         toast({
           title: 'Payment marked as paid!',
-          description: `Payment for ${payment.parentName} has been marked as paid.`,
+          description: `Payment for ${payment.parent?.name || 'Parent'} has been marked as paid.`,
         })
       } else {
         toast({
@@ -376,84 +512,83 @@ export default function PaymentDetailPage() {
   const handleSendReminder = async () => {
     if (!payment || !payment.parentId) return
     
-    try {
-      setSendingReminder(true)
-      
-      // Get parent name from payment data
-      const parentName = (payment as any).parentName || payment.parent?.name || 'Parent'
-      
-      // Generate AI message with simulated response for now
-      const aiContext = {
-        parentName: parentName,
-        amount: payment.amount,
-        dueDate: new Date(payment.dueDate || 0).toLocaleDateString(),
-        status: payment.status,
-        paymentId: payment._id,
-        remindersSent: payment.remindersSent || 0
-      }
-
-      // Show AI-generated message in a dialog/modal for user to review
-      const aiGeneratedMessage = `Dear ${parentName},
+    // Get parent name from payment data
+    const parentName = payment.parent?.name || 'Parent'
+    
+    // Generate the reminder message
+    const aiGeneratedMessage = `Dear ${parentName},
 
 I hope this message finds you well. I wanted to reach out regarding your payment of $${payment.amount} that was due on ${new Date(payment.dueDate || 0).toLocaleDateString()}.
 
-We understand that sometimes payments can be overlooked in our busy schedules, and we're here to help make this process as smooth as possible for you.
+${payment.status === 'overdue' ? 
+  'This payment is currently overdue. ' : 
+  'We understand that sometimes payments can be overlooked in our busy schedules. '
+}
 
-If you have any questions about this payment or need assistance with payment options, please don't hesitate to reach out to us. We're committed to working with families to ensure everyone can participate in our program.
+We're here to help make this process as smooth as possible for you. If you have any questions about this payment or need assistance with payment options, please don't hesitate to reach out to us.
 
 Thank you for your time and continued support of our basketball program.
 
 Best regards,
-RA1 Basketball Program Team`
+The Basketball Factory Inc.`
 
-      // Show the AI-generated message to the user in an alert for now
-      alert(`AI-Generated Payment Reminder Preview:\n\n${aiGeneratedMessage}\n\nThis message will be sent to ${parentName}.`)
+    // Set the message and open the dialog for review
+    setReminderMessage(aiGeneratedMessage)
+    setSendReminderOpen(true)
+  }
+
+  const handleSendReminderConfirm = async (message: string, method: 'email' | 'sms' = 'email') => {
+    if (!payment || !payment.parentId) return
+    
+    try {
+      setSendingReminder(true)
       
-      // For now, just show success without actually sending
-      toast({
-        title: 'AI Reminder Generated',
-        description: `AI-generated payment reminder created for ${parentName}. Message preview shown above.`,
-      })
-      setSendingReminder(false)
-      return
-
-      let subject = `Payment Reminder - $${payment.amount} Due`
-      let body = aiGeneratedMessage
-
-      // Send the message
+      // Send the reminder using the messages API endpoint
       const response = await fetch('/api/messages', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
-          recipients: [payment.parentId], // Send as array
-          subject: subject,
-          body: body,
-          channel: 'email',
-          variables: {
-            parentName: parentName,
-            amount: payment.amount,
-            dueDate: new Date(payment.dueDate || 0).toLocaleDateString(),
-            paymentId: payment._id
-          }
-        })
+          parentId: payment.parentId,
+          message: message,
+          method: method,
+          type: 'payment_reminder',
+          subject: `Payment Reminder - $${payment.amount} Due`
+        }),
       })
 
-      if (response.ok) {
-        // Show success toast
-        toast({
-          title: 'AI-Generated Reminder Sent',
-          description: `Personalized payment reminder sent to ${parentName}`,
-        })
-      } else {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to send reminder')
+      if (!response.ok) {
+        throw new Error('Failed to send reminder')
       }
+
+      const result = await response.json()
+
+      // Enhanced success confirmation
+      toast({
+        title: '✅ Payment Reminder Sent Successfully!',
+        description: `Payment reminder sent to ${payment.parent?.name || 'Parent'} via ${method.toUpperCase()} for $${payment.amount} payment.`,
+        duration: 5000, // Show for 5 seconds
+      })
+
+      // Log successful send for debugging
+      console.log('Payment Reminder sent successfully:', {
+        parentName: payment.parent?.name,
+        method: method,
+        amount: payment.amount,
+        messageId: result.messageId
+      })
+
+      // Close the dialog
+      setSendReminderOpen(false)
+      setReminderMessage('')
     } catch (error) {
       console.error('Error sending reminder:', error)
       toast({
-        title: 'Failed to send reminder',
-        description: error instanceof Error ? error.message : 'There was an error sending the payment reminder.',
+        title: '❌ Failed to Send Payment Reminder',
+        description: `Could not send payment reminder to ${payment.parent?.name || 'Parent'}. Please try again or contact support.`,
         variant: 'destructive',
+        duration: 7000, // Show error longer
       })
     } finally {
       setSendingReminder(false)
@@ -461,10 +596,10 @@ RA1 Basketball Program Team`
   }
 
   const handleStripePortal = async () => {
-    if (!payment?.parent?.id) return;
+    if (!payment?.parent?._id) return;
     setLoadingStripe(true);
     try {
-      const response = await fetch(`/api/stripe/portal?parentId=${payment.parent.id}`);
+      const response = await fetch(`/api/stripe/portal?parentId=${payment.parent._id}`);
       if (response.ok) {
         const data = await response.json();
         if (data.url) {
@@ -493,10 +628,10 @@ RA1 Basketball Program Team`
   };
 
   const handleStripeSync = async () => {
-    if (!payment?.parent?.id) return;
+    if (!payment?.parent?._id) return;
     setLoadingStripe(true);
     try {
-      const response = await fetch(`/api/stripe/sync?parentId=${payment.parent.id}`);
+      const response = await fetch(`/api/stripe/sync?parentId=${payment.parent._id}`);
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
@@ -504,7 +639,7 @@ RA1 Basketball Program Team`
             title: 'Stripe Sync Successful',
             description: 'Stripe customer data synced successfully.',
           });
-          fetchPaymentDetails(); // Refresh payment details to update balance
+          // Refresh payment details would go here if we had that function
         } else {
           toast({
             title: 'Stripe Sync Failed',
@@ -530,6 +665,17 @@ RA1 Basketball Program Team`
 
   const handleStripeSetup = async () => {
     if (!payment?.parentId) return;
+    
+    // Check if a payment option is selected
+    if (!selectedPaymentOption) {
+      toast({
+        title: 'Payment Plan Required',
+        description: 'Please select a payment plan first.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setLoadingStripe(true);
     try {
       // Get parent data
@@ -545,45 +691,92 @@ RA1 Basketball Program Team`
         return;
       }
 
-      // Create a payment link for this specific payment
-      const response = await fetch('/api/stripe/create-payment-link', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          paymentId: payment._id,
-          parentId: payment.parentId,
-          parentName: parentName,
-          parentEmail: parentEmail,
-          amount: payment.amount,
-          description: `RA1 Basketball Program Payment - ${parentName}`,
-        }),
+      // Get the selected payment option details
+      const selectedOption = paymentSchedules.find(option => option.id === selectedPaymentOption);
+      if (!selectedOption) {
+        toast({
+          title: 'Invalid Payment Option',
+          description: 'Please select a valid payment option.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      // Validate custom payment fields if custom option is selected
+      if (selectedOption.id === 'custom') {
+        if (!customAmount || parseFloat(customAmount) <= 0) {
+          toast({
+            title: 'Invalid Amount',
+            description: 'Please enter a valid payment amount.',
+            variant: 'destructive',
+          });
+          return;
+        }
+        if (!customInstallmentCount || customInstallmentCount < 1) {
+          toast({
+            title: 'Invalid Installments',
+            description: 'Please enter a valid number of installments.',
+            variant: 'destructive',
+          });
+          return;
+        }
+        if (!customPaymentFrequency || customPaymentFrequency < 1) {
+          toast({
+            title: 'Invalid Frequency',
+            description: 'Please enter a valid payment frequency.',
+            variant: 'destructive',
+          });
+          return;
+        }
+      }
+
+      // For custom option, use the payment amount; for others, use the option amount
+      const paymentAmount = selectedOption.id === 'custom' ? 
+        (parseFloat(customAmount) * 100) || payment.amount : 
+        selectedOption.amount;
+      const displayAmount = selectedOption.id === 'custom' ? 
+        `$${parseFloat(customAmount || '0').toFixed(2)}` : 
+        selectedOption.displayAmount;
+
+      // Redirect to checkout page
+      const checkoutParams: Record<string, string> = {
+        amount: selectedOption.id === 'custom' ? 
+          (parseFloat(customAmount) || 0).toFixed(2) : 
+          displayAmount.replace('$', ''),
+        name: parentName,
+        email: parentEmail,
+        parentId: payment.parentId,
+        plan: selectedOption.id,
+        installments: selectedOption.id === 'custom' ? 
+          customInstallmentCount.toString() : 
+          (selectedOption.installments?.toString() || '1')
+      };
+
+      // Add custom payment frequency for custom plans
+      if (selectedOption.id === 'custom') {
+        checkoutParams.frequency = customPaymentFrequency.toString();
+        checkoutParams.totalAmount = (parseFloat(customAmount || '0') * customInstallmentCount).toFixed(2);
+      }
+
+      const checkoutUrl = `/payments/${payment._id}/checkout?` + new URLSearchParams(checkoutParams).toString();
+
+      // Navigate to checkout page
+      router.push(checkoutUrl);
+      
+      const toastDescription = selectedOption.id === 'custom' 
+        ? `Processing custom payment: ${displayAmount} every ${customPaymentFrequency} month${customPaymentFrequency !== 1 ? 's' : ''} for ${customInstallmentCount} payment${customInstallmentCount !== 1 ? 's' : ''}`
+        : `Processing ${selectedOption.name} - ${displayAmount}`;
+      
+      toast({
+        title: 'Redirecting to Payment',
+        description: toastDescription,
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        
-        if (data.paymentUrl) {
-          // Open Stripe checkout page in a new window
-          window.open(data.paymentUrl, '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
-          
-          toast({
-            title: 'Payment Page Opened',
-            description: `Stripe checkout opened for ${parentName}. Complete your payment in the new window.`,
-          });
-        } else {
-          throw new Error('No payment URL received');
-        }
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create payment link');
-      }
     } catch (error) {
-      console.error('Error creating payment link:', error);
+      console.error('Error setting up payment:', error);
       toast({
-        title: 'Failed to Create Payment Link',
-        description: error instanceof Error ? error.message : 'There was an error creating the payment link.',
+        title: 'Failed to Setup Payment',
+        description: error instanceof Error ? error.message : 'There was an error setting up the payment.',
         variant: 'destructive',
       });
     } finally {
@@ -683,111 +876,6 @@ RA1 Basketball Program Team`
     ? Math.floor((new Date().getTime() - new Date(payment.dueDate).getTime()) / (1000 * 60 * 60 * 24))
     : 0
 
-  const handleSubscriptionCreate = async () => {
-    if (!payment?.parent?.id) return;
-    setLoadingStripe(true);
-    try {
-      const response = await fetch(`/api/stripe/subscriptions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          parentId: payment.parent.id,
-          action: 'create'
-        })
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.url) {
-          window.open(data.url, '_blank');
-        } else {
-          toast({
-            title: 'Subscription Created',
-            description: 'Subscription has been created successfully.',
-          });
-          window.location.reload();
-        }
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create subscription.');
-      }
-    } catch (error) {
-      console.error('Error creating subscription:', error);
-      toast({
-        title: 'Error creating subscription',
-        description: error instanceof Error ? error.message : 'An unexpected error occurred.',
-        variant: 'destructive',
-      });
-    } finally {
-      setLoadingStripe(false);
-    }
-  };
-
-  const handleSubscriptionManage = async () => {
-    if (!payment?.parent?.id) return;
-    setLoadingStripe(true);
-    try {
-      const response = await fetch(`/api/stripe/portal?parentId=${payment.parent.id}&returnUrl=${encodeURIComponent(window.location.href)}`);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.url) {
-          window.open(data.url, '_blank');
-        } else {
-          toast({
-            title: 'Error opening Stripe Portal',
-            description: 'Unable to open customer portal.',
-            variant: 'destructive',
-          });
-        }
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to open customer portal.');
-      }
-    } catch (error) {
-      console.error('Error opening customer portal:', error);
-      toast({
-        title: 'Error opening customer portal',
-        description: error instanceof Error ? error.message : 'An unexpected error occurred.',
-        variant: 'destructive',
-      });
-    } finally {
-      setLoadingStripe(false);
-    }
-  };
-
-  const handleSubscriptionCancel = async () => {
-    if (!payment?.parent?.id) return;
-    setLoadingStripe(true);
-    try {
-      const response = await fetch(`/api/stripe/subscriptions`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          parentId: payment.parent.id,
-          action: 'cancel'
-        })
-      });
-      if (response.ok) {
-        toast({
-          title: 'Subscription Cancelled',
-          description: 'Subscription has been cancelled successfully.',
-        });
-        window.location.reload();
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to cancel subscription.');
-      }
-    } catch (error) {
-      console.error('Error cancelling subscription:', error);
-      toast({
-        title: 'Error cancelling subscription',
-        description: error instanceof Error ? error.message : 'An unexpected error occurred.',
-        variant: 'destructive',
-      });
-    } finally {
-      setLoadingStripe(false);
-    }
-  };
-
   return (
     <AppLayout>
       <div className="container mx-auto py-6 space-y-6">
@@ -856,55 +944,138 @@ RA1 Basketball Program Team`
               </CardTitle>
             </CardHeader>
             <CardContent className="grid gap-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="text-center p-4 bg-green-50 rounded-lg border border-green-200">
-                  <DollarSign className="h-8 w-8 mx-auto text-green-600 mb-2" />
-                  <p className="text-3xl font-bold text-green-600">
-                    ${Number(payment.amount).toLocaleString()}
-                  </p>
-                  <p className="text-sm text-green-600 font-medium">Amount Due</p>
-                </div>
-                <div className="text-center p-4 bg-blue-50 rounded-lg border border-blue-200">
-                  <Calendar className="h-8 w-8 mx-auto text-blue-600 mb-2" />
-                  <p className="text-lg font-bold text-blue-600">
-                    {new Date(payment.dueDate).toLocaleDateString()}
-                  </p>
-                  <p className="text-sm text-blue-600 font-medium">Due Date</p>
-                </div>
-                <div className={`text-center p-4 rounded-lg border ${
-                  payment.status === 'paid' 
-                    ? 'bg-green-50 border-green-200' 
-                    : payment.status === 'overdue'
-                    ? 'bg-red-50 border-red-200'
-                    : 'bg-yellow-50 border-yellow-200'
-                }`}>
-                  {payment.status === 'paid' ? (
-                    <CheckCircle className="h-8 w-8 mx-auto text-green-600 mb-2" />
-                  ) : payment.status === 'overdue' ? (
-                    <AlertTriangle className="h-8 w-8 mx-auto text-red-600 mb-2" />
-                  ) : (
-                    <Clock className="h-8 w-8 mx-auto text-yellow-600 mb-2" />
-                  )}
-                  <p className={`text-lg font-bold capitalize ${
+              {/* Show subscription/plan information if available */}
+              {payment.paymentPlan ? (
+                <>
+                  {/* Payment Plan Summary */}
+                  <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-medium">Payment Plan:</span>
+                      <Badge variant="outline" className="capitalize">
+                        {payment.paymentPlan.type} Plan
+                      </Badge>
+                    </div>
+                    <div className="text-sm text-gray-600 space-y-1">
+                      <div>Plan Amount: ${Number(payment.paymentPlan.installmentAmount).toLocaleString()}</div>
+                      <div>Total Program Cost: ${Number(payment.paymentPlan.totalAmount).toLocaleString()}</div>
+                      {payment.paymentPlan.description && (
+                        <div className="font-medium text-blue-700 mt-2">
+                          {payment.paymentPlan.description}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Payment Status Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="text-center p-4 bg-green-50 rounded-lg border border-green-200">
+                      <DollarSign className="h-8 w-8 mx-auto text-green-600 mb-2" />
+                      <p className="text-3xl font-bold text-green-600">
+                        ${Number(payment.paymentPlan?.installmentAmount || payment.amount).toLocaleString()}
+                      </p>
+                      <p className="text-sm text-green-600 font-medium">
+                        {payment.status === 'paid' ? 'Payment Made' : 'Current Payment'}
+                      </p>
+                    </div>
+                    <div className="text-center p-4 bg-blue-50 rounded-lg border border-blue-200">
+                      <Calendar className="h-8 w-8 mx-auto text-blue-600 mb-2" />
+                      <p className="text-lg font-bold text-blue-600">
+                        {payment.status === 'paid' && payment.paidAt 
+                          ? new Date(payment.paidAt).toLocaleDateString()
+                          : new Date(payment.dueDate).toLocaleDateString()
+                        }
+                      </p>
+                      <p className="text-sm text-blue-600 font-medium">
+                        {payment.status === 'paid' ? 'Payment Date' : 'Due Date'}
+                      </p>
+                    </div>
+                    <div className={`text-center p-4 rounded-lg border ${
+                      payment.status === 'paid' 
+                        ? 'bg-green-50 border-green-200' 
+                        : payment.status === 'overdue'
+                        ? 'bg-red-50 border-red-200'
+                        : 'bg-yellow-50 border-yellow-200'
+                    }`}>
+                      {payment.status === 'paid' ? (
+                        <CheckCircle className="h-8 w-8 mx-auto text-green-600 mb-2" />
+                      ) : payment.status === 'overdue' ? (
+                        <AlertTriangle className="h-8 w-8 mx-auto text-red-600 mb-2" />
+                      ) : (
+                        <Clock className="h-8 w-8 mx-auto text-yellow-600 mb-2" />
+                      )}
+                      <p className={`text-lg font-bold capitalize ${
+                        payment.status === 'paid' 
+                          ? 'text-green-600' 
+                          : payment.status === 'overdue'
+                          ? 'text-red-600'
+                          : 'text-yellow-600'
+                      }`}>
+                        {payment.status === 'paid' ? 'Active' : payment.status}
+                      </p>
+                      <p className={`text-sm font-medium ${
+                        payment.status === 'paid' 
+                          ? 'text-green-600' 
+                          : payment.status === 'overdue'
+                          ? 'text-red-600'
+                          : 'text-yellow-600'
+                      }`}>
+                        {payment.status === 'paid' ? 'Payment Status' : 'Payment Status'}
+                      </p>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                /* Standard payment display for non-subscription payments */
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="text-center p-4 bg-green-50 rounded-lg border border-green-200">
+                    <DollarSign className="h-8 w-8 mx-auto text-green-600 mb-2" />
+                    <p className="text-3xl font-bold text-green-600">
+                      ${Number(payment.amount).toLocaleString()}
+                    </p>
+                    <p className="text-sm text-green-600 font-medium">Amount Due</p>
+                  </div>
+                  <div className="text-center p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <Calendar className="h-8 w-8 mx-auto text-blue-600 mb-2" />
+                    <p className="text-lg font-bold text-blue-600">
+                      {new Date(payment.dueDate).toLocaleDateString()}
+                    </p>
+                    <p className="text-sm text-blue-600 font-medium">Due Date</p>
+                  </div>
+                  <div className={`text-center p-4 rounded-lg border ${
                     payment.status === 'paid' 
-                      ? 'text-green-600' 
+                      ? 'bg-green-50 border-green-200' 
                       : payment.status === 'overdue'
-                      ? 'text-red-600'
-                      : 'text-yellow-600'
+                      ? 'bg-red-50 border-red-200'
+                      : 'bg-yellow-50 border-yellow-200'
                   }`}>
-                    {payment.status}
-                  </p>
-                  <p className={`text-sm font-medium ${
-                    payment.status === 'paid' 
-                      ? 'text-green-600' 
-                      : payment.status === 'overdue'
-                      ? 'text-red-600'
-                      : 'text-yellow-600'
-                  }`}>
-                    Payment Status
-                  </p>
+                    {payment.status === 'paid' ? (
+                      <CheckCircle className="h-8 w-8 mx-auto text-green-600 mb-2" />
+                    ) : payment.status === 'overdue' ? (
+                      <AlertTriangle className="h-8 w-8 mx-auto text-red-600 mb-2" />
+                    ) : (
+                      <Clock className="h-8 w-8 mx-auto text-yellow-600 mb-2" />
+                    )}
+                    <p className={`text-lg font-bold capitalize ${
+                      payment.status === 'paid' 
+                        ? 'text-green-600' 
+                        : payment.status === 'overdue'
+                        ? 'text-red-600'
+                        : 'text-yellow-600'
+                    }`}>
+                      {payment.status}
+                    </p>
+                    <p className={`text-sm font-medium ${
+                      payment.status === 'paid' 
+                        ? 'text-green-600' 
+                        : payment.status === 'overdue'
+                        ? 'text-red-600'
+                        : 'text-yellow-600'
+                    }`}>
+                      Payment Status
+                    </p>
+                  </div>
                 </div>
-              </div>
+              )}
               
               {payment.paidAt && (
                 <div className="p-4 bg-green-50 rounded-lg border border-green-200">
@@ -917,8 +1088,29 @@ RA1 Basketball Program Team`
                   </p>
                 </div>
               )}
+
+              {/* Subscription Notes */}
+              {payment.paymentPlan && (
+                <div className="p-4 bg-gray-50 rounded-lg border">
+                  <div className="flex items-center gap-2 mb-2">
+                    <FileText className="h-5 w-5 text-gray-600" />
+                    <span className="font-medium text-gray-800">Subscription Notes</span>
+                  </div>
+                  <p className="text-gray-700 text-sm">
+                    {payment.paymentPlan.type === 'monthly' && 'Subscription created: monthly plan'}
+                    {payment.paymentPlan.type === 'quarterly' && 'Subscription created: quarterly plan'}
+                    {payment.paymentPlan.type === 'custom' && 'Subscription created: custom plan'}
+                    {payment.paymentPlan.type === 'full' && 'One-time payment plan'}
+                  </p>
+                  {payment.notes && (
+                    <p className="text-gray-600 text-sm mt-2 italic">
+                      Additional notes: {payment.notes}
+                    </p>
+                  )}
+                </div>
+              )}
               
-              {payment.notes && (
+              {payment.notes && !payment.paymentPlan && (
                 <div>
                   <label className="text-sm font-medium text-muted-foreground mb-2 block">Payment Notes</label>
                   <div className="p-4 bg-muted rounded-lg">
@@ -928,6 +1120,22 @@ RA1 Basketball Program Team`
               )}
             </CardContent>
           </Card>
+
+          {/* Payment Progress - Show if installments exist */}
+          {paymentProgress && paymentProgress.installments && paymentProgress.installments.length > 0 && (
+            <PaymentProgress 
+              progressData={paymentProgress}
+              onPayInstallment={(installmentId) => {
+                // Handle individual installment payment
+                router.push(`/payments/${params.id}/checkout?installment=${installmentId}`)
+              }}
+              onModifySchedule={() => {
+                setModifyScheduleOpen(true)
+              }}
+              onAiReminder={handleAiReminder}
+              isAdmin={true} // TODO: Check actual admin status
+            />
+          )}
 
           {/* Payment Plan Information */}
           {payment.paymentPlan && (
@@ -1312,10 +1520,13 @@ RA1 Basketball Program Team`
                           size="sm" 
                           className="w-full"
                           onClick={handleStripeSetup}
-                          disabled={loadingStripe}
+                          disabled={loadingStripe || !selectedPaymentOption}
                         >
                           <CreditCard className="mr-2 h-3 w-3" />
-                          {loadingStripe ? 'Creating Payment Link...' : 'Pay with Credit Card'}
+                          {loadingStripe ? 'Creating Payment Link...' : 
+                           selectedPaymentOption ? 
+                           `Pay ${paymentSchedules.find(opt => opt.id === selectedPaymentOption)?.displayAmount || 'with Credit Card'}` :
+                           'Select Payment Plan First'}
                         </Button>
                       </div>
                     )}
@@ -1352,7 +1563,7 @@ RA1 Basketball Program Team`
                                 <div className="flex flex-col">
                                   <div className="flex items-center justify-between w-full">
                                     <span className="font-medium">{option.name}</span>
-                                    <span className="text-green-600 font-bold ml-2">{option.displayPrice}</span>
+                                    <span className="text-green-600 font-bold ml-2">{option.displayAmount}</span>
                                   </div>
                                   <span className="text-xs text-muted-foreground text-left">
                                     {option.description}
@@ -1363,6 +1574,62 @@ RA1 Basketball Program Team`
                           </SelectContent>
                         </Select>
                       </div>
+                      
+                      {/* Custom Payment Fields */}
+                      {selectedPaymentOption === 'custom' && (
+                        <div className="space-y-3 p-3 border rounded-lg bg-background">
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                              Custom Amount ($)
+                            </label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              placeholder="Enter amount per payment"
+                              value={customAmount}
+                              onChange={(e) => setCustomAmount(e.target.value)}
+                              className="text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                              Number of Installments
+                            </label>
+                            <Input
+                              type="number"
+                              min="1"
+                              max="24"
+                              placeholder="Total number of payments"
+                              value={customInstallmentCount}
+                              onChange={(e) => setCustomInstallmentCount(parseInt(e.target.value) || 1)}
+                              className="text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                              Payment Frequency (months)
+                            </label>
+                            <Input
+                              type="number"
+                              min="1"
+                              max="12"
+                              placeholder="Months between payments"
+                              value={customPaymentFrequency}
+                              onChange={(e) => setCustomPaymentFrequency(parseInt(e.target.value) || 1)}
+                              className="text-sm"
+                            />
+                          </div>
+                          <div className="text-xs text-muted-foreground bg-blue-50 p-2 rounded">
+                            <strong>Preview:</strong> ${customAmount || '0'} every {customPaymentFrequency} month{customPaymentFrequency !== 1 ? 's' : ''} for {customInstallmentCount} payment{customInstallmentCount !== 1 ? 's' : ''} 
+                            {customAmount && customInstallmentCount && (
+                              <span className="block mt-1">
+                                <strong>Total:</strong> ${(parseFloat(customAmount || '0') * customInstallmentCount).toFixed(2)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
                       
                       <Button
                         onClick={handlePaymentProcess}
@@ -1467,79 +1734,6 @@ RA1 Basketball Program Team`
                 )}
               </div>
 
-              {/* Subscription Section */}
-                  <div className="border rounded-lg p-3 bg-muted/50">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="text-sm font-medium flex items-center gap-2">
-                        <Calendar className="h-4 w-4" />
-                        Subscription
-                      </h4>
-                      {payment.parent?.stripeCustomer?.subscriptions && payment.parent.stripeCustomer.subscriptions.length > 0 ? (
-                        <Badge variant={
-                          payment.parent.stripeCustomer.subscriptions[0].status === 'active' ? 'default' :
-                          payment.parent.stripeCustomer.subscriptions[0].status === 'trialing' ? 'secondary' :
-                          payment.parent.stripeCustomer.subscriptions[0].status === 'canceled' ? 'destructive' :
-                          'outline'
-                        }>
-                          {payment.parent.stripeCustomer.subscriptions[0].status}
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline">No Subscription</Badge>
-                      )}
-                    </div>
-                    
-                    {payment.parent?.stripeCustomer?.subscriptions && payment.parent.stripeCustomer.subscriptions.length > 0 ? (
-                      <div className="space-y-2">
-                        <div className="text-xs text-muted-foreground">
-                          <div>Current Period: {new Date(payment.parent.stripeCustomer.subscriptions[0].currentPeriodStart).toLocaleDateString()} - {new Date(payment.parent.stripeCustomer.subscriptions[0].currentPeriodEnd).toLocaleDateString()}</div>
-                          {payment.parent.stripeCustomer.subscriptions[0].cancelAt && new Date(payment.parent.stripeCustomer.subscriptions[0].cancelAt) < new Date() && (
-                            <div className="text-orange-600 font-medium">Cancels at: {new Date(payment.parent.stripeCustomer.subscriptions[0].cancelAt).toLocaleDateString()}</div>
-                          )}
-                          {payment.parent.stripeCustomer.subscriptions[0].trialEnd && new Date(payment.parent.stripeCustomer.subscriptions[0].trialEnd) > new Date() && (
-                            <div className="text-blue-600 font-medium">Trial ends: {new Date(payment.parent.stripeCustomer.subscriptions[0].trialEnd).toLocaleDateString()}</div>
-                          )}
-                        </div>
-                        <div className="flex gap-1">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-xs"
-                            onClick={handleSubscriptionManage}
-                            disabled={loadingStripe}
-                          >
-                            {loadingStripe ? <Loader2 className="h-3 w-3 animate-spin" /> : <Settings className="h-3 w-3" />}
-                            Manage
-                          </Button>
-                          {payment.parent.stripeCustomer.subscriptions[0].status === 'active' && payment.parent.stripeCustomer.subscriptions[0].cancelAt && new Date(payment.parent.stripeCustomer.subscriptions[0].cancelAt) > new Date() && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-xs text-orange-600"
-                              onClick={handleSubscriptionCancel}
-                              disabled={loadingStripe}
-                            >
-                              Cancel
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <p className="text-xs text-muted-foreground">No active subscription</p>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-xs"
-                          onClick={handleSubscriptionCreate}
-                          disabled={loadingStripe}
-                        >
-                          {loadingStripe ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-                          Create Subscription
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-
               <Button asChild variant="outline" size="sm" className="w-full">
                 <Link href="/communication">
                   <MessageCircle className="mr-2 h-4 w-4" />
@@ -1568,7 +1762,223 @@ RA1 Basketball Program Team`
           </Card>
         </div>
       </div>
+
+      {/* Payment History Section */}
+      <div className="mt-8">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <History className="h-5 w-5" />
+                Payment History
+              </div>
+              {paymentHistoryData?.summary && (
+                <Badge variant="outline">
+                  {paymentHistoryData.summary.totalEvents} Event{paymentHistoryData.summary.totalEvents !== 1 ? 's' : ''}
+                </Badge>
+              )}
+            </CardTitle>
+            {paymentHistoryData?.summary && (
+              <div className="text-sm text-muted-foreground">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-2">
+                  <div>
+                    <span className="font-medium">Total Amount:</span> ${paymentHistoryData.summary.totalAmount}
+                  </div>
+                  <div>
+                    <span className="font-medium">Amount Paid:</span> ${paymentHistoryData.summary.amountPaid}
+                  </div>
+                  <div>
+                    <span className="font-medium">Installments:</span> {paymentHistoryData.summary.installmentsPaid}/{paymentHistoryData.summary.totalInstallments}
+                  </div>
+                  <div>
+                    <span className="font-medium">Parent:</span> {paymentHistoryData.summary.parentName || 'Unknown'}
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardHeader>
+          <CardContent>
+            {paymentHistory && paymentHistory.length > 0 ? (
+              <div className="space-y-4">
+                {paymentHistory.map((event: any) => (
+                  <div key={event.id} className="flex gap-4 p-4 border rounded-lg bg-card">
+                    <div className="flex-shrink-0">
+                      {event.icon === 'plus-circle' && <PlusCircle className="h-5 w-5 text-blue-500" />}
+                      {event.icon === 'calendar' && <Calendar className="h-5 w-5 text-purple-500" />}
+                      {event.icon === 'file-text' && <FileText className="h-5 w-5 text-gray-500" />}
+                      {event.icon === 'check-circle' && <CheckCircle className="h-5 w-5 text-green-500" />}
+                      {event.icon === 'alert-triangle' && <AlertTriangle className="h-5 w-5 text-red-500" />}
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="font-medium">{event.title}</h4>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <span>{new Date(event.timestamp).toLocaleDateString()}</span>
+                          <span>{new Date(event.timestamp).toLocaleTimeString()}</span>
+                        </div>
+                      </div>
+                      <p className="text-sm text-muted-foreground mb-3">{event.description}</p>
+                      
+                      {/* Event Details */}
+                      {event.details && (
+                        <div className="bg-muted/50 rounded-lg p-3 space-y-2">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                            {event.details.amount && (
+                              <div>
+                                <span className="font-medium">Amount:</span> ${event.details.amount}
+                              </div>
+                            )}
+                            {event.details.installmentNumber && (
+                              <div>
+                                <span className="font-medium">Installment:</span> #{event.details.installmentNumber}
+                              </div>
+                            )}
+                            {event.details.dueDate && (
+                              <div>
+                                <span className="font-medium">Due Date:</span> {new Date(event.details.dueDate || Date.now()).toLocaleDateString()}
+                              </div>
+                            )}
+                            {event.details.paidAt && (
+                              <div>
+                                <span className="font-medium">Paid At:</span> {new Date(event.details.paidAt || Date.now()).toLocaleDateString()}
+                              </div>
+                            )}
+                            {event.details.paymentMethod && (
+                              <div>
+                                <span className="font-medium">Method:</span> {event.details.paymentMethod}
+                              </div>
+                            )}
+                            {event.details.transactionId && (
+                              <div>
+                                <span className="font-medium">Transaction ID:</span> {event.details.transactionId}
+                              </div>
+                            )}
+                            {event.details.daysPastDue && (
+                              <div>
+                                <span className="font-medium">Days Past Due:</span> {event.details.daysPastDue}
+                              </div>
+                            )}
+                            {event.details.status && (
+                              <div>
+                                <span className="font-medium">Status:</span> 
+                                <Badge 
+                                  variant={
+                                    event.details.status === 'paid' ? 'default' :
+                                    event.details.status === 'pending' ? 'secondary' :
+                                    event.details.status === 'overdue' ? 'destructive' :
+                                    'outline'
+                                  }
+                                  className="ml-2"
+                                >
+                                  {event.details.status}
+                                </Badge>
+                              </div>
+                            )}
+                          </div>
+                          
+                          {/* Payment Plan Details */}
+                          {event.details.paymentPlan && (
+                            <div className="border-t pt-2 mt-2">
+                              <div className="text-xs font-medium text-muted-foreground mb-1">Payment Plan Details:</div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                                <div>
+                                  <span className="font-medium">Type:</span> {event.details.paymentPlan.type}
+                                </div>
+                                <div>
+                                  <span className="font-medium">Total Amount:</span> ${event.details.paymentPlan.totalAmount}
+                                </div>
+                                <div>
+                                  <span className="font-medium">Installment Amount:</span> ${event.details.paymentPlan.installmentAmount}
+                                </div>
+                                <div>
+                                  <span className="font-medium">Installments:</span> {event.details.paymentPlan.installments}
+                                </div>
+                              </div>
+                              {event.details.paymentPlan.description && (
+                                <div className="text-xs mt-2">
+                                  <span className="font-medium">Description:</span> {event.details.paymentPlan.description}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      <div className="flex items-center justify-between mt-3">
+                        <div className="text-xs text-muted-foreground">
+                          Performed by: {event.performedBy}
+                        </div>
+                        <Badge variant="outline" className="text-xs">
+                          {event.type.replace('_', ' ')}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <History className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-muted-foreground mb-2">No Payment History</h3>
+                <p className="text-sm text-muted-foreground">
+                  Payment history will appear here as events occur.
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
+    
+    {/* Modify Schedule Dialog */}
+    {paymentProgress && paymentProgress.installments && (
+      <ModifyScheduleDialog
+        open={modifyScheduleOpen}
+        onOpenChange={setModifyScheduleOpen}
+        installments={paymentProgress.installments}
+        onSave={handleModifySchedule}
+        paymentId={params.id as string}
+      />
+    )}
+
+    {/* AI Payment Reminder Dialog */}
+    {selectedInstallment && payment && (
+      <AiPaymentReminderDialog
+        open={aiReminderOpen}
+        onOpenChange={setAiReminderOpen}
+        paymentData={{
+          parentName: payment.parent?.name || 'Parent',
+          parentEmail: payment.parent?.email || '',
+          amount: selectedInstallment.amount,
+          dueDate: selectedInstallment.dueDate,
+          installmentNumber: selectedInstallment.installmentNumber,
+          totalInstallments: paymentProgress?.totalInstallments,
+          paymentPlan: payment.paymentPlan?.type || 'standard',
+          status: selectedInstallment.status,
+          daysPastDue: selectedInstallment.status === 'overdue' ? 
+            Math.floor((Date.now() - selectedInstallment.dueDate) / (1000 * 60 * 60 * 24)) : 0
+        }}
+        onSendReminder={handleSendAiReminder}
+      />
+    )}
+
+    {/* Send Reminder Review Dialog */}
+    {payment && (
+      <ReminderReviewDialog
+        open={sendReminderOpen}
+        onOpenChange={setSendReminderOpen}
+        paymentData={{
+          parentName: payment.parent?.name || 'Parent',
+          parentEmail: payment.parent?.email || '',
+          amount: payment.amount,
+          dueDate: payment.dueDate,
+          status: payment.status,
+        }}
+        initialMessage={reminderMessage}
+        onSendReminder={handleSendReminderConfirm}
+        isSending={sendingReminder}
+      />
+    )}
   </AppLayout>
   )
 }

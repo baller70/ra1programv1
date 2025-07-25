@@ -4,7 +4,11 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server'
 import { requireAuth } from '../../../../lib/api-utils'
 // Clerk auth
-import { prisma } from '../../../../lib/db'
+import { analyzeContract } from '../../../../../lib/ai'
+import { ConvexHttpClient } from 'convex/browser'
+import { api } from '../../../../convex/_generated/api'
+
+const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 
 export async function POST(request: Request) {
   try {
@@ -17,18 +21,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Contract ID is required' }, { status: 400 })
     }
 
-    const contract = await prisma.contract.findUnique({
-      where: { id: contractId },
-      include: {
-        parent: {
-          include: {
-            payments: { orderBy: { dueDate: 'desc' }, take: 5 },
-            contracts: { orderBy: { createdAt: 'desc' } },
-            paymentPlans: { where: { status: 'active' } }
-          }
-        }
-      }
-    })
+    const contract = await convex.query(api.contracts.getContract, { id: contractId as any })
 
     if (!contract) {
       return NextResponse.json({ error: 'Contract not found' }, { status: 404 })
@@ -109,34 +102,15 @@ Provide comprehensive contract analysis focusing on status, compliance, and reco
   ]
 
   try {
-    const response = await fetch('https://apps.abacus.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.ABACUSAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-4.1-mini',
-        messages: messages,
-        response_format: { type: "json_object" },
-        max_tokens: 1200,
-        temperature: 0.3
-      })
-    })
-
-    if (!response.ok) {
-      throw new Error(`AI API error: ${response.statusText}`)
-    }
-
-    const aiResponse = await response.json()
-    let content = aiResponse.choices[0].message.content
+    // Use OpenAI through our AI library
+    const contractText = `Contract: ${contract.originalName}\nStatus: ${contract.status}\nParent: ${contract.parent?.name}\nAmount: $${contract.totalAmount}\nExpires: ${contract.expiresAt}\nNotes: ${contract.notes || 'None'}`
+    const aiResult = await analyzeContract(contractText)
     
-    // Remove markdown code blocks if present
-    if (content.includes('```json')) {
-      content = content.replace(/```json\s*/g, '').replace(/\s*```/g, '')
+    if (!aiResult.success) {
+      throw new Error(aiResult.error || 'Failed to analyze contract')
     }
     
-    return JSON.parse(content)
+    return aiResult.analysis
   } catch (error) {
     console.error('Contract analysis AI error:', error)
     return {

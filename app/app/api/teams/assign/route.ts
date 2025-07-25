@@ -2,7 +2,8 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { prisma } from '../../../../lib/db';
+import { convexHttp } from '../../../../lib/db';
+import { api } from '../../../../convex/_generated/api';
 
 const assignParentsSchema = z.object({
   teamId: z.string().nullable(),
@@ -21,70 +22,16 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { teamId, parentIds } = assignParentsSchema.parse(body);
 
-    // Verify team exists if teamId is provided
-    if (teamId) {
-      const team = await prisma.team.findUnique({
-        where: { id: teamId }
-      });
-
-      if (!team) {
-        return NextResponse.json(
-          { error: 'Team not found' },
-          { status: 404 }
-        );
-      }
-    }
-
-    // Verify all parent IDs exist
-    const parents = await prisma.parent.findMany({
-      where: {
-        id: { in: parentIds }
-      },
-      select: { id: true, name: true }
-    });
-
-    if (parents.length !== parentIds.length) {
-      const foundIds = parents.map(p => p.id);
-      const missingIds = parentIds.filter(id => !foundIds.includes(id));
-      return NextResponse.json(
-        { error: 'Some parent IDs not found', missingIds },
-        { status: 404 }
-      );
-    }
-
-    // Update all parents with the new team assignment
-    const updatedParents = await prisma.parent.updateMany({
-      where: {
-        id: { in: parentIds }
-      },
-      data: {
-        teamId: teamId
-      }
-    });
-
-    // Fetch updated parent information
-    const result = await prisma.parent.findMany({
-      where: {
-        id: { in: parentIds }
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        team: {
-          select: {
-            id: true,
-            name: true,
-            color: true
-          }
-        }
-      }
+    // Use the Convex assignParentsToTeam mutation
+    const result = await convexHttp.mutation(api.teams.assignParentsToTeam, {
+      teamId: teamId as any,
+      parentIds: parentIds as any[]
     });
 
     return NextResponse.json({
       success: true,
-      message: `Successfully ${teamId ? 'assigned' : 'unassigned'} ${updatedParents.count} parent(s) ${teamId ? 'to team' : 'from teams'}`,
-      updatedParents: result
+      message: `Successfully ${teamId ? 'assigned' : 'unassigned'} ${result.assignedCount} parent(s) ${teamId ? 'to team' : 'from teams'}`,
+      updatedParents: result.parents
     });
 
   } catch (error) {
@@ -95,6 +42,15 @@ export async function POST(request: NextRequest) {
         { error: 'Invalid data', details: error.errors },
         { status: 400 }
       );
+    }
+    
+    if (error instanceof Error) {
+      if (error.message.includes('not found')) {
+        return NextResponse.json(
+          { error: error.message },
+          { status: 404 }
+        );
+      }
     }
     
     return NextResponse.json(
@@ -109,61 +65,22 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const { assignments } = bulkAssignSchema.parse(body);
 
-    // Verify all team IDs exist
-    const teamIds = [...new Set(assignments.map(a => a.teamId).filter(Boolean))];
-    if (teamIds.length > 0) {
-      const teams = await prisma.team.findMany({
-        where: { id: { in: teamIds } },
-        select: { id: true }
-      });
-      
-      const foundTeamIds = teams.map(t => t.id);
-      const missingTeamIds = teamIds.filter(id => !foundTeamIds.includes(id));
-      
-      if (missingTeamIds.length > 0) {
-        return NextResponse.json(
-          { error: 'Some team IDs not found', missingTeamIds },
-          { status: 404 }
-        );
-      }
-    }
-
-    // Verify all parent IDs exist
-    const parentIds = assignments.map(a => a.parentId);
-    const parents = await prisma.parent.findMany({
-      where: { id: { in: parentIds } },
-      select: { id: true }
-    });
-    
-    if (parents.length !== parentIds.length) {
-      const foundParentIds = parents.map(p => p.id);
-      const missingParentIds = parentIds.filter(id => !foundParentIds.includes(id));
-      return NextResponse.json(
-        { error: 'Some parent IDs not found', missingParentIds },
-        { status: 404 }
-      );
-    }
-
-    // Perform bulk assignments
+    // Process assignments one by one using Convex
     const results = [];
     for (const assignment of assignments) {
-      const updatedParent = await prisma.parent.update({
-        where: { id: assignment.parentId },
-        data: { teamId: assignment.teamId },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          team: {
-            select: {
-              id: true,
-              name: true,
-              color: true
-            }
-          }
+      try {
+        const result = await convexHttp.mutation(api.teams.assignParentsToTeam, {
+          teamId: assignment.teamId as any,
+          parentIds: [assignment.parentId] as any[]
+        });
+        
+        if (result.parents && result.parents.length > 0) {
+          results.push(result.parents[0]);
         }
-      });
-      results.push(updatedParent);
+      } catch (error) {
+        console.error(`Failed to assign parent ${assignment.parentId}:`, error);
+        // Continue with other assignments even if one fails
+      }
     }
 
     return NextResponse.json({
