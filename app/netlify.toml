@@ -1,12 +1,11 @@
 [build]
-  base = "app"
   command = "npm ci && npm run build"
-  publish = "app/.next"
+  publish = ".next"
 
 [build.environment]
   NODE_VERSION = "18"
 
-# Next.js plugin for better compatibility
+# Next.js plugin for better compatibility  
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 

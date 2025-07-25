@@ -264,7 +264,7 @@ export default function AIInsightsPage() {
                 <CheckCircle2 className="h-8 w-8 text-green-600" />
                 <div>
                   <div className="text-2xl font-bold">
-                    {recommendations.filter(r => r.isExecuted).length}
+                    {recommendations.filter(r => r.status === 'implemented').length}
                   </div>
                   <div className="text-xs text-muted-foreground">Executed</div>
                 </div>
@@ -370,8 +370,8 @@ export default function AIInsightsPage() {
                       </div>
                       <div className="flex items-center space-x-1">
                         <Brain className="h-3 w-3" />
-                        <span className={getConfidenceColor(recommendation.confidence)}>
-                          {recommendation.confidence}% confident
+                        <span className={getConfidenceColor(recommendation.confidence || 0)}>
+                          {recommendation.confidence || 0}% confident
                         </span>
                       </div>
                       <div className="flex items-center space-x-1">
@@ -438,7 +438,7 @@ export default function AIInsightsPage() {
                 <div className="space-y-3">
                   <h4 className="text-sm font-medium flex items-center">
                     <Lightbulb className="mr-2 h-4 w-4 text-yellow-600" />
-                    Recommended Actions ({recommendation.actions.length})
+                    Recommended Actions ({(recommendation.actions || []).length})
                   </h4>
                   
                   <div className="space-y-2">

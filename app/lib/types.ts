@@ -135,7 +135,7 @@ export type AIRecommendation = {
   description: string;
   type: "payment" | "communication" | "template" | "workflow";
   category: string;
-  priority: "low" | "medium" | "high";
+  priority: "low" | "medium" | "high" | "urgent";
   status: RecommendationStatus;
   parentId?: string;
   paymentId?: string;
@@ -143,6 +143,12 @@ export type AIRecommendation = {
   createdAt: number;
   updatedAt: number;
   metadata?: Record<string, any>;
+  autoExecutable?: boolean;
+  isExecuted?: boolean;
+  expectedImpact?: string;
+  confidence?: number;
+  context?: string;
+  actions?: string[];
 };
 
 export type AIRecommendationWithRelations = AIRecommendation & {
